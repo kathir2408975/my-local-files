@@ -122,6 +122,75 @@ How many Full-time U.S employees in the most recent year?
 0
 
 
+prompt 2:
+
+
+26784619
+Enter your query: Please indicate total REVENUES?
+
+The total revenues for the most recent year (2023) are $24,054,787.
+
+
+58587108
+Enter your query: Please indicate total REVENUES?
+
+The total revenues are as follows:  
+- **2022:** $4,028,942  
+- **2021:** $4,222,971
+
+
+26784619
+
+Enter your query:
+Identify company's Cash and Cash Equivalents from the most recent year?
+
+The company's Cash and Cash Equivalents from the most recent year is **$6,755,020**.
+
+
+
+
+
+58587108
+Enter your query:
+
+Identify company's Cash and Cash Equivalents from the most recent year?
+
+The company's Cash and Cash Equivalents from the most recent year (2023) are $2,305,577.
+
+
+26784619
+Enter your query: what is the total amount for current Assets in the most recent fiscal year end (YE)?
+
+The total amount for current assets in the most recent fiscal year end (YE) is **$1,167,381**.
+
+
+
+58587108
+Enter your query: what is the total amount for current Assets in the most recent fiscal year end (YE)?
+
+
+The total amount for current assets in the most recent fiscal year end (December 31, 2022) is **$3,052,326**.
+
+
+26784619
+
+Enter your query:
+
+How many Full-time U.S employees in the most recent year?
+
+The application indicates there are 13 full-time U.S. employees in the most recent year (10 in AL, CO, DE, FL, GA, KS, LA, ME, MO, MT, SC, TN, UT, WY, and 3 in "All Other States").
+
+
+58587108
+
+Enter your query:
+
+How many Full-time U.S employees in the most recent year?
+
+The Applicant reported 0 full-time U.S. employees in the most recent year.
+
+
+
 
 
 
