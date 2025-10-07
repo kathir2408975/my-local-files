@@ -61,3 +61,67 @@ Think task-by-task and take your time.
 
 
 
+26784619
+Enter your query: Please indicate total REVENUES?
+
+- Total revenues (2023): $24,054,787  
+- Total revenues (2022): $18,381,040  
+- Total revenues (2021): $22,983,401
+
+
+58587108
+Enter your query: Please indicate total REVENUES?
+2022: $4,028,942, 2021: $4,222,971
+
+
+26784619
+
+Enter your query:
+Identify company's Cash and Cash Equivalents from the most recent year?
+
+
+"Cash and cash equivalents $ 6,755,020"
+
+
+
+58587108
+Enter your query:
+Identify company's Cash and Cash Equivalents from the most recent year?
+$2,305,577
+
+
+
+26784619
+
+Enter your query:
+what is the total amount for current Assets in the most recent fiscal year end (YE)?
+
+"Information not found in the document."
+
+
+58587108
+
+Enter your query:
+what is the total amount for current Assets in the most recent fiscal year end (YE)?
+
+"Total current assets $3,052,326"
+
+
+26784619
+
+Enter your query:
+How many Full-time U.S employees in the most recent year?
+Information not found in the document.
+
+
+58587108
+
+Enter your query:
+How many Full-time U.S employees in the most recent year?
+
+0
+
+
+
+
+
