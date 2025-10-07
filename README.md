@@ -65,13 +65,14 @@ Think task-by-task and take your time.
 Enter your query: Please indicate total REVENUES?
 
 - Total revenues (2023): $24,054,787  
-- Total revenues (2022): $18,381,040  
+- Total revenues (2022): $18,381,040  ---> this correct
 - Total revenues (2021): $22,983,401
 
 
 58587108
 Enter your query: Please indicate total REVENUES?
-2022: $4,028,942, 2021: $4,222,971
+2022: $4,028,942, --->> this
+2021: $4,222,971
 
 
 26784619
@@ -80,14 +81,14 @@ Enter your query:
 Identify company's Cash and Cash Equivalents from the most recent year?
 
 
-"Cash and cash equivalents $ 6,755,020"
+"Cash and cash equivalents $ 6,755,020" --> correct
 
 
 
 58587108
 Enter your query:
 Identify company's Cash and Cash Equivalents from the most recent year?
-$2,305,577
+$2,305,577 --> correct
 
 
 
@@ -104,14 +105,14 @@ what is the total amount for current Assets in the most recent fiscal year end (
 Enter your query:
 what is the total amount for current Assets in the most recent fiscal year end (YE)?
 
-"Total current assets $3,052,326"
+"Total current assets $3,052,326" --> correct
 
 
 26784619
 
 Enter your query:
 How many Full-time U.S employees in the most recent year?
-Information not found in the document.
+Information not found in the document. -->> wrong
 
 
 58587108
@@ -119,7 +120,7 @@ Information not found in the document.
 Enter your query:
 How many Full-time U.S employees in the most recent year?
 
-0
+0 -> correct
 
 
 prompt 2:
@@ -161,7 +162,7 @@ The company's Cash and Cash Equivalents from the most recent year (2023) are $2,
 26784619
 Enter your query: what is the total amount for current Assets in the most recent fiscal year end (YE)?
 
-The total amount for current assets in the most recent fiscal year end (YE) is **$1,167,381**.
+The total amount for current assets in the most recent fiscal year end (YE) is **$1,167,381**. -->> data taken from 2021, but ground value 2022 data
 
 
 
@@ -178,7 +179,7 @@ Enter your query:
 
 How many Full-time U.S employees in the most recent year?
 
-The application indicates there are 13 full-time U.S. employees in the most recent year (10 in AL, CO, DE, FL, GA, KS, LA, ME, MO, MT, SC, TN, UT, WY, and 3 in "All Other States").
+The application indicates there are 13 full-time U.S. employees in the most recent year (10 in AL, CO, DE, FL, GA, KS, LA, ME, MO, MT, SC, TN, UT, WY, and 3 in "All Other States"). -->> correct
 
 
 58587108
