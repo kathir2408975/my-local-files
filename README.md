@@ -191,9 +191,6 @@ How many Full-time U.S employees in the most recent year?
 The Applicant reported 0 full-time U.S. employees in the most recent year.
 
 
-Endpoint - https://tcoeaiteamgpt5flavors.openai.azure.com/
-API Key - B4EKTSkJt2tgcKalOTF81YuvL0M5ZbuL2sCGF0RBGa83r2kTtu9FJQQJ99BHACHYHv6XJ3w3AAABACOG6uuP
-Region – eastus2
 
 
 
