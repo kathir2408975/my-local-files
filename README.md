@@ -191,6 +191,92 @@ How many Full-time U.S employees in the most recent year?
 The Applicant reported 0 full-time U.S. employees in the most recent year.
 
 
+from flask import Flask, request, jsonify
+from ragas.metrics import (
+    answer_relevancy,
+    faithfulness,
+    answer_correctness
+)
+from ragas import evaluate
+from ragas.llms import LangchainLLM
+from datasets import Dataset
+from langchain_core.language_models import LLM
+from typing import List
+import requests
+
+# ========== Custom LLM Wrapper ==========
+class CustomLLM(LLM):
+    def __init__(self, endpoint_url, headers=None, default_params=None):
+        self.endpoint_url = endpoint_url
+        self.headers = headers or {}
+        self.default_params = default_params or {}
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom-llm"
+
+    def _call(self, prompt: str, stop: List[str] = None) -> str:
+        payload = self.default_params.copy()
+        payload["prompt"] = prompt
+
+        try:
+            response = requests.post(
+                self.endpoint_url,
+                json=payload,
+                headers=self.headers
+            )
+            response.raise_for_status()
+            return response.json().get("response", "")  # Adjust this key as needed
+        except Exception as e:
+            raise RuntimeError(f"LLM API call failed: {e}")
+
+# ========== Configuration ==========
+LLM_API_URL = "http://your-llm-endpoint.com/api/generate"  # Replace with your endpoint
+HEADERS = {
+    "Authorization": "Bearer your_token",  # Replace with your token or auth header
+    "Content-Type": "application/json"
+}
+DEFAULT_PARAMS = {
+    "temperature": 0.7,
+    "max_tokens": 300
+}
+
+# Register custom LLM with RAGAS
+LangchainLLM(CustomLLM(LLM_API_URL, headers=HEADERS, default_params=DEFAULT_PARAMS))
+
+# ========== Flask App ==========
+app = Flask(__name__)
+
+def build_dataset(data_list):
+    return Dataset.from_list(data_list)
+
+@app.route('/evaluate', methods=['POST'])
+def evaluate_rag():
+    data = request.get_json()
+
+    if not data or 'samples' not in data:
+        return jsonify({'error': 'Invalid request. "samples" field is required.'}), 400
+
+    try:
+        dataset = build_dataset(data['samples'])
+
+        result = evaluate(
+            dataset,
+            metrics=[
+                answer_relevancy,
+                faithfulness,
+                answer_correctness,
+            ]
+        )
+
+        return jsonify(result.to_dict()), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ========== Run App ==========
+if __name__ == '__main__':
+    app.run(debug=True)
 
 
 
