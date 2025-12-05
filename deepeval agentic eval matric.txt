@@ -1,0 +1,971 @@
+deepeval :
+
+1.Tool Correctness
+
+
+prompt:
+
+ f"""You are an expert evaluator assessing the **Tool Selection** quality of an AI agent.
+
+            You are given:
+            - The **user input** that defines the user's goal / task.
+            - A list of **available tools**, each with a name and description.
+            - A list of **tool calls made** by the agent during execution, including tool name and parameters.
+
+            Your job is to assign a **Tool Selection score** from 0.0 to 1.0 based on how appropriate and well-matched the agent's chosen tools were to the task's requirements.
+
+            ---
+
+            DEFINITION:
+
+            Tool Selection evaluates how suitable the agent's tool choices were in addressing the task and sub-tasks.
+
+            This metric does **not** consider:
+            - How well the tools were used (execution quality)
+            - Whether the agent adhered to a plan
+            - Whether the output was correct or efficient
+
+            It only assesses whether the **right tools** were selected, based on their stated descriptions and the demands of the task.
+
+            ---
+
+            INSTRUCTIONS:
+
+            Step 1: Read the **user task** to understand what needed to be accomplished.
+
+            Step 2: Examine the **available tools** and their descriptions to understand the intended purpose of each.
+
+            Step 3: Review the **tool calls made by the agent**:
+            - Were the selected tools well-aligned with the task?
+            - Were any obviously better-suited tools ignored?
+            - Were any tools misapplied or used unnecessarily?
+
+            Step 4: Identify selection issues:
+            - **Correct Selection**: Tool(s) chosen directly and appropriately matched the subtask.
+            - **Over-selection**: More tools were selected than necessary, despite availability of a simpler or more direct option.
+            - **Under-selection**: Key tools that were well-suited were omitted.
+            - **Mis-selection**: Tools were chosen that were poorly matched to their purpose or the subtask.
+
+            ---
+
+            SCORING GUIDE:
+
+            - **1.0** → All selected tools were appropriate and necessary. No better-suited tools were omitted.
+            - **0.75** → Tool choices were mostly appropriate, with minor omissions or unnecessary use.
+            - **0.5** → Mixed tool selection. Some useful tools ignored or some inappropriate ones used.
+            - **0.25** → Poor tool selection. Better alternatives were available and ignored.
+            - **0.0** → Tool selection was clearly misaligned with task requirements.
+
+            ---
+
+            OUTPUT FORMAT:
+
+            Return a valid JSON object with this exact structure:
+            {{
+                "score": float between 0.0 and 1.0,
+                "reason": "1-3 concise, factual sentences explaining the score. Reference specific tool names and descriptions when relevant."
+            }}
+
+            Do not include any additional commentary or output outside the JSON object.
+
+            ---
+
+            USER INPUT:
+            {user_input}
+
+            ALL AVAILABLE TOOLS:
+            {available_tools}
+
+            TOOL CALLS MADE BY AGENT:
+            {tools_called}
+
+            JSON:
+            """
+        )
+
+
+
+
+
+
+2.Task Completion:
+
+
+ def extract_goal_and_outcome(
+        input: str, actual_output: str, tools_called: list
+    ) -> str:
+        return textwrap.dedent(
+            f"""Given an agentic workflow comprised of a human input, AI response, and tools used by the AI, identify the task (or objective the user wants to achieve) and the task_outcome (the final outcome or result of the workflow).
+            The task outcome should be solely factual, derived strictly from the workflow (input, response, and tools called), without any reasoning involved.
+
+            ``Example:
+            Example input: Can you help me plan a trip to New York this weekend, including travel, accommodation, and sightseeing?
+            Example tools called:
+            [
+                {{
+                    "name": "flight_search",
+                    "description": "Search for flights based on destination and date.",
+                    "reasoning": "The input specifies travel as part of the task. This tool is needed to find flight options based on the user's destination and dates.",
+                    "output": {{
+                        "flights": ["Flight A", "Flight B"]
+                    }},
+                    "input_parameters": {{
+                        "destination": "New York",
+                        "date": "Saturday",
+                        "return_date": "Sunday"
+                    }}
+                }},
+                {{
+                    "name": "hotel_search",
+                    "description": "Search for hotels in the given location.",
+                    "reasoning": "The input specifies accommodation as part of the task. This tool is needed to find hotel options in the specified location for the provided dates.",
+                    "output": {{
+                        "hotels": ["Grand NY Hotel", "Empire Suites"]
+                    }},
+                    "input_parameters": {{
+                        "location": "New York",
+                        "check_in": "Saturday",
+                        "check_out": "Sunday"
+                    }}
+                }},
+                {{
+                    "name": "sightseeing_search",
+                    "description": "Provide sightseeing options for a given location.",
+                    "reasoning": "The input specifies sightseeing as part of the task. This tool is needed to generate a list of recommended places to visit in New York.",
+                    "output": {{
+                        "sights": ["Central Park", "Statue of Liberty", "Times Square"]
+                    }},
+                    "input_parameters": {{
+                        "location": "New York"
+                    }}
+                }}
+            ]
+            Example response: Sure! Flights available to New York include Flight A and Flight B. Accommodation options include Grand NY Hotel and Empire Suites. Suggested sightseeing spots in New York are Central Park, Statue of Liberty, and Times Square. 
+
+            Example JSON:
+            {{
+                "task": "Have the system plan a weekend trip to New York, including travel, accommodation, and sightseeing.",
+                "outcome": "The system provided suggested flights departing on Saturday and returning on Sunday, identified hotels with check-in on Saturday and check-out on Sunday, and generated a list of sightseeing destinations in New York City."
+            }}
+            ===== END OF EXAMPLE ======
+                    
+            **
+            IMPORTANT: Please make sure to only return in JSON format with two keys: `task` and `outcome`.
+            **
+
+            input: {input}
+            tools called:
+            {print_tools_called(tools_called)}
+            response: {actual_output}
+
+            JSON:
+        """
+        )
+
+    @staticmethod
+    def extract_task_and_outcome_from_trace(trace: dict) -> str:
+        return textwrap.dedent(
+            f"""Given a nested workflow trace whose spans may be of type `agent`, `tool`, `llm`, `retriever`, or `custom`, identify:
+
+            1. **task** – the task or objective expressed by the user in the root agent’s input.  
+            2. **outcome** – a strictly factual description of what the system did, based only on the trace.
+
+            The task outcome should be solely factual, derived strictly from the trace.
+            Do **not** include subjective language such as “successfully”, “efficiently”, or “well”.  
+            Enumerate each relevant action or output the trace shows, in plain language.
+
+            ``Example:
+            Example trace:
+            {{
+            "name": "trip_planner",
+            "type": "agent",
+            "input": {{
+                "input": "Can you help me plan a business trip to Chicago next week?"
+            }},
+            "output": {{
+                "summary": "Trip planning initiated."
+            }},
+            "available_tools": ["flight_tool", "hotel_tool"],
+            "agent_handoffs": [],
+            "children": [
+                {{
+                "name": "flight_tool",
+                "type": "tool",
+                "input": {{
+                    "inputParameters": {{
+                    "destination": "Chicago",
+                    "date": "2024-07-10"
+                    }}
+                }},
+                "output": {{
+                    "flights": ["Flight 101", "Flight 202"]
+                }},
+                "description": "Search for flights to a destination",
+                "children": []
+                }},
+                {{
+                "name": "hotel_tool",
+                "type": "tool",
+                "input": {{
+                    "inputParameters": {{
+                    "location": "Chicago",
+                    "check_in": "2024-07-10",
+                    "check_out": "2024-07-12"
+                    }}
+                }},
+                "output": {{
+                    "hotels": ["The Grand Chicago", "Lakeview Inn"]
+                }},
+                "description": "Find hotels for specified dates",
+                "children": []
+                }},
+                {{
+                "name": "agenda_llm",
+                "type": "llm",
+                "input": {{
+                    "prompt": "Draft a meeting agenda",
+                    "input": [
+                    {{
+                        "role": "system",
+                        "content": "You are an executive assistant."
+                    }},
+                    {{
+                        "role": "user",
+                        "content": "Create an agenda for a client strategy meeting."
+                    }}
+                    ]
+                }},
+                "output": "1. Q2 review\\n2. Client feedback\\n3. Strategy planning",
+                "model": "gpt-4",
+                "inputTokenCount": 38,
+                "outputTokenCount": 21,
+                "children": []
+                }},
+                {{
+                "name": "slide_retriever",
+                "type": "retriever",
+                "input": {{
+                    "embeddingInput": "presentation.pptx"
+                }},
+                "output": {{
+                    "retrievalContext": ["Slide 1: Revenue", "Slide 2: Client Feedback"]
+                }},
+                "topK": 3,
+                "chunkSize": 512,
+                "children": []
+                }},
+                {{
+                "name": "client_embedder",
+                "type": "custom",
+                "input": {{
+                    "text": "Concerns from enterprise clients"
+                }},
+                "output": [0.1, 0.32, 0.85],
+                "children": []
+                }}
+            ]
+            }}
+            Example JSON:
+            {{
+            "task": "Plan a business trip to Chicago, including flights, lodging, meeting agenda, presentation review, and client preparation.",
+            "outcome": "The system invoked a tool to retrieve two flight options and another tool to find two hotels for the specified dates. An LLM with model 'gpt-4' generated a three-topic meeting agenda from a system/user prompt. A retriever extracted three slides using the embedding input 'presentation.pptx' with topK=3 and chunk size 512. A custom component generated vector embeddings for a client-related input string."
+            }}
+            ===== END OF EXAMPLE =====
+
+            **
+            IMPORTANT – return only valid JSON with two keys: `task` and `outcome`.
+            **
+
+            trace:
+            {json.dumps(trace, default=make_json_serializable, indent=2)}
+
+            JSON:
+            """
+        )
+
+    @staticmethod
+    def generate_verdict(task: str, actual_outcome: str):
+        return textwrap.dedent(
+            f"""Given the task (desired outcome) and the actual achieved outcome, compare how well the actual outcome aligns with the desired task.
+
+                Please return a JSON with two keys: `verdict` and `reason`.
+                - The `verdict` should be a score from 0 to 1, where 1 indicates the actual outcome perfectly achieves the desired task, and 0 indicates it does not achieve the task at all.
+                - The `reason` should explain why the given verdict was assigned.
+
+                **
+                IMPORTANT: Please make sure to only return in JSON format, with `verdict` as a float between 0 and 1.
+                Example:
+                Task: Have the system plan a weekend trip to New York, including travel, accommodation, and sightseeing.
+                Actual outcome: The system provided suggested flights departing on Saturday and returning on Sunday, identified hotels with check-in on Saturday and check-out on Sunday, and generated a list of sightseeing destinations in New York City.
+                Example JSON:
+                {{
+                    "verdict": 0.85,
+                    "reason": "The system suggested flights, accommodation, and sightseeing options but did not fully plan the trip as expected."
+                }}
+                **
+
+                Task:
+                {task}
+
+                Actual outcome:
+                {actual_outcome}
+
+                JSON:
+            """
+        )
+
+
+
+
+3.Argument Correctness
+
+
+prompt:
+
+def generate_verdicts(input: str, tools_called: List[ToolCall]):
+
+        stringified_tools_called = repr(tools_called)
+
+        return textwrap.dedent(
+            f"""
+            For the provided list of tool calls, determine whether each tool call input parameter is relevantly and correctly addresses the input.
+
+            Please generate a list of JSON with two keys: `verdict` and `reason`.
+            The 'verdict' key should STRICTLY be either a 'yes' or 'no'. Answer 'yes' if the tool call input parameter is relevantly and correctly addresses the original input, 'no' if the tool call input parameter doesn't correctly and relevantly address the original input.
+            The 'reason' is the reason for the verdict.
+            Provide a 'reason' ONLY if the answer is 'no'. 
+            If there is no input parameter, answer 'no' for the verdict and provide the reason as "No input parameter provided".
+
+            **
+            IMPORTANT: Please make sure to only return in valid and parseable JSON format, with the 'verdicts' key mapping to a list of JSON objects. Ensure all strings are closed appropriately. Repair any invalid JSON before you output it.
+            Example input: 
+            "What was the highest temperature recorded in Paris in 2023?"
+            
+            Example tool calls: 
+            [
+                ToolCall(
+                    name="WeatherHistoryAPI",
+                    description="Fetches historical weather data for a given city and date range",
+                    reasoning="I need to check all 2023 temperature records for Paris to find the highest one.",
+                    input_parameters={{
+                        "city_name": "Paris",
+                        "country_code": "FR",
+                        "date_range_start": "2023-01-01",
+                        "date_range_end": "2023-12-31",
+                        "data_type": "temperature_max_daily_celsius"
+                    }}
+                ),
+                ToolCall(
+                    name="MathAnalyzer",
+                    description="Performs statistical calculations on numeric datasets",
+                    reasoning="I will calculate the maximum temperature value from the daily dataset.",
+                    input_parameters={{
+                        "operation": "max",
+                        "dataset_source": "WeatherHistoryAPI.daily_max_temperatures",
+                        "expected_unit": "celsius"
+                    }}
+                ),
+                ToolCall(
+                    name="MovieRecommender",
+                    description="Recommends movies based on user mood or location",
+                    reasoning="I thought Paris movies might be fun to suggest, but this is unrelated to the question.",
+                    input_parameters={{
+                        "preferred_genres": ["romance", "comedy"],
+                        "setting_city": "Paris",
+                        "language_preference": "French or English"
+                    }}
+                )
+            ]
+
+            Example JSON:
+            {{
+                "verdicts": [
+                    {{
+                        "verdict": "yes"
+                    }},
+                    {{
+                        "verdict": "yes"
+                    }},
+                    {{
+                        "reason": "Recommending romantic Parisian comedies does not help find the highest temperature in 2023.",
+                        "verdict": "no"
+                    }}
+                ]  
+            }}
+            ===== END OF EXAMPLE ======
+
+            Since you are going to generate a verdict for each statement, the number of 'verdicts' SHOULD BE STRICTLY EQUAL to the number of `statements`.
+            **          
+
+            Input:
+            {input}
+
+            Tool Calls:
+            {stringified_tools_called}
+
+            JSON:
+            """
+        )
+
+    @staticmethod
+    def generate_reason(
+        incorrect_tool_calls_reasons: List[str], input: str, score: float
+    ):
+        return textwrap.dedent(
+            f"""Given the argument correctness score, the list of reasons of incorrect tool calls, and the input, provide a CONCISE reason for the score. Explain why it is not higher, but also why it is at its current score. You can mention tool calls or input, but do not mention an output or a response.
+            If there is nothing incorrect, just say something positive with an upbeat encouraging tone (but don't overdo it otherwise it gets annoying).
+
+            **
+            IMPORTANT: Please make sure to only return in JSON format, with the 'reason' key providing the reason. Ensure all strings are closed appropriately. Repair any invalid JSON before you output it.
+
+            Example:
+            Example JSON:
+            {{
+                "reason": "The score is <argument_correctness_score> because <your_reason>."
+            }}
+            ===== END OF EXAMPLE ======
+            **
+
+
+            Argument Correctness Score:
+            {score}
+
+            Reasons why the score can't be higher based on incorrect tool calls:
+            {incorrect_tool_calls_reasons}
+
+            Input:
+            {input}
+
+            JSON:
+             """
+        )
+
+
+4. Step Efficiency
+
+
+prompt:
+
+def extract_task_from_trace(trace: dict) -> str:
+        return textwrap.dedent(
+            f"""You are a **trace analyst** tasked with extracting the **user's original goal or task** from a complete nested execution trace of an AI agent.
+
+                YOUR OBJECTIVE:
+
+                Identify and describe **exactly what the user asked the agent to do**, based only on the user's explicit input and any unambiguous contextual details present in the trace.
+
+                Your goal is to produce a **concise, fact-based statement** that captures the *intended user task* — not the agent's plan, actions, reasoning, or assumptions.
+
+                STRICT EXTRACTION RULES:
+
+                1. Primary Source: Root-Level User Input
+                - The user's task must be derived **directly and primarily** from the root agent's `"input"` field.  
+                - If that field contains nested `"input"` or `"messages"`, extract the true user instruction or request text from within it.
+
+                2. Secondary Context: Subtasks as Clarifiers (Optional)
+                - You may use child spans (tools, retrievers, LLMs) **only** to clarify or disambiguate what the user explicitly asked for — 
+                    e.g., to confirm that the task involves multiple subtasks the user clearly implied (like booking and planning steps for a trip).
+                - You may **NOT** infer new goals that the user did not state or imply.
+
+                3. No Hallucination
+                - Do **NOT** invent goals, assumptions, or implied needs beyond what is explicitly or clearly inferable from the input.
+                - If the user's request is vague, preserve that vagueness — do not expand it.
+
+                4. Agent-Agnostic Rule
+                - Ignore the agent's tools, methods, reasoning, or internal operations.
+                - The task reflects **what the user wanted**, not how the agent chose to approach it.
+
+                5. Perspective
+                - Express the extracted task **from the user's perspective**, as if restating what they asked the system to do.
+                - Avoid any meta or evaluative phrasing (“The user wanted the agent to…”).
+
+                6. Fallback Condition
+                - If the only available information about the task is the raw user input text, return that input verbatim without modification.
+
+                OUTPUT FORMAT:
+
+                Return **only** a JSON object of this form:
+
+                {{
+                    "task": "<a single clear sentence summarizing the user's explicit goal>"
+                }}
+
+                - The `"task"` value should be a single, coherent natural language sentence or two at most.
+                - Do not include commentary, metadata, or any additional fields.
+
+                EXAMPLES:
+
+                Example Trace: {{ 
+                    "name": "trip_planner", 
+                    "type": "agent", 
+                    "input": {{ 
+                        "input": "Help me plan a business trip to Chicago next week." 
+                    }}, 
+                    "children": [ 
+                        {{ 
+                            "name": "flight_tool", 
+                            "type": "tool", 
+                            "input": {{ 
+                                "inputParameters": {{ 
+                                    "destination": "Chicago", 
+                                    "date": "2024-07-10" 
+                                }} }}, 
+                                "output": {{ 
+                                    "flights": ["Flight 101", "Flight 202"] 
+                                }}, 
+                                "children": [] 
+                        }}, 
+                        {{ 
+                            "name": "hotel_tool", 
+                            "type": "tool", 
+                            "input": {{ 
+                                "inputParameters": {{ 
+                                    "location": "Chicago", 
+                                    "check_in": "2024-07-10", 
+                                    "check_out": "2024-07-12" 
+                                }} }}, 
+                                "output": {{ 
+                                    "hotels": ["The Grand Chicago", "Lakeview Inn"] 
+                                }}, 
+                                "children": [] 
+                        }}, 
+                        {{ 
+                            "name": "agenda_llm", 
+                            "type": "llm", 
+                            "input": {{ 
+                                "prompt": "Draft a meeting agenda", 
+                                "input": [ 
+                                    {{ 
+                                        "role": "system", 
+                                        "content": "You are an executive assistant." 
+                                    }}, 
+                                    {{ 
+                                        "role": "user", 
+                                        "content": "Create an agenda for a client strategy meeting." 
+                                    }} 
+                                ] 
+                            }}, 
+                        "output": "1. Q2 review\\n2. Client feedback\\n3. Strategy planning", 
+                        "children": [] 
+                        }} 
+                    ] 
+                }} 
+                
+                Expected JSON: 
+                {{ 
+                    "task": "Plan a business trip to Chicago next week, including booking a flight, reserving a hotel, and drafting a client meeting agenda." 
+                }}
+
+                IMPORTANT ENFORCEMENT RULES:
+
+                - If multiple user inputs exist, identify the overall task that user has in mind.
+                - Do not include execution details, tools, function names, or reasoning text.
+                - Avoid restating or paraphrasing beyond clarity; preserve the user's intent exactly.
+                - When uncertain, extract **less rather than more** — prefer minimal, factual phrasing over speculative completion.
+
+                TRACE DATA:
+
+                {json.dumps(trace, default=make_json_serializable, indent=2)}
+
+                ---
+
+                ### JSON:
+            """
+        )
+
+    @staticmethod
+    def get_execution_efficiency(task: str, trace: dict) -> str:
+        return textwrap.dedent(
+            f"""You are an **efficiency auditor** evaluating how economically an AI agent executed a task.
+
+                OBJECTIVE:
+
+                Determine how **efficiently** the agent executed the given task based on its full execution trace.
+                Efficiency means achieving the user's goal using the **fewest, simplest, and most direct** actions possible.
+
+                You must assign a score from **0.0 to 1.0** that reflects how close the execution came to the *minimal necessary sequence of actions*.
+
+                **Important:** You are not evaluating correctness, completeness, creativity, or helpfulness — only the *efficiency* of the execution.
+
+                STRICT EVALUATION RULES:
+
+                1. Zero-Tolerance for Unnecessary Actions
+                - Every step, tool call, LLM query, or retrieval must be **strictly required** to fulfill the task.  
+                - If a single tool, retrieval, or reasoning step is superfluous, speculative, repetitive, or stylistic, 
+                    the score must be as low as possible, regardless of outcome quality.
+                - Adding “helpful” or “contextual” actions that were not explicitly necessary is an inefficiency.
+
+                2. Minimal Action Principle
+                - The ideal execution performs the **exact minimum number of steps** needed to complete the task.  
+                - Each step must directly contribute to completing the task, not to exploration, confirmation, or elaboration.
+
+                3. No Speculation or Enrichment
+                - Any activity aimed at *enhancing*, *expanding*, or *beautifying* the answer (e.g., extra retrievals, style edits, rephrasings) 
+                    reduces the score sharply (≤ 0.25).  
+                - Efficiency is about restraint — **doing exactly what's required, nothing more**.
+
+                4. Directness and Focus
+                - Steps must appear in a logically minimal sequence from input to goal.  
+                - Repetition, re-querying, nested reasoning loops, or tool reuse when not needed 
+                    indicate inefficiency.
+
+                5. Resource Economy
+                - Use of multiple LLM calls, retrievers, or tools when one would suffice must be penalized.
+                - Avoided resources (if the agent achieved the task through simpler means) improve efficiency.
+
+                6. When in Doubt
+                - If it is unclear whether an action was required or not, **assume it was unnecessary** and lower the score.
+                - Err on the side of penalizing over generosity.
+
+                SCORING SCALE (STRICT)
+
+                - **1.0 — Perfectly efficient**
+                - Only essential steps taken.  
+                - Each action was directly necessary for task completion.  
+                - No speculative, redundant, or decorative work.
+
+                - **0.75 — Strong efficiency**
+                - Mostly minimal execution with one small redundant or stylistic step.  
+                - Slight overuse of a tool or repeated call, but otherwise tight.
+
+                - **0.5 — Moderate efficiency**
+                - Noticeable inefficiency: extra steps, unnecessary tool calls, or indirect methods.  
+                - The same task could clearly have been completed faster or with fewer actions.
+
+                - **0.25 — Low efficiency**
+                - Multiple irrelevant or unjustified actions taken.  
+                - Execution path significantly longer or more complex than needed.
+
+                - **0.0 — Highly inefficient**
+                - Execution was verbose, exploratory, speculative, or wasteful.  
+                - Most actions were unnecessary or unrelated to achieving the core task.
+
+                *When uncertain, always assign the lower score.*
+
+                OUTPUT FORMAT:
+
+                Return a single JSON object in this exact format:
+
+                {{
+                    "score": 0.0,
+                    "reason": "1-3 concise factual sentences describing where inefficiencies occurred."
+                }}
+
+                The `reason` must:
+                - Identify specific inefficient actions (e.g., redundant LLM call, unnecessary retrieval, speculative tool use).
+                - Avoid subjective phrasing (“reasonable”, “seems okay”, “somewhat efficient”).
+                - Be direct and concrete: “Extra retrieval used for enrichment”, “Multiple summarizations of same data”, etc.
+
+                EXAMPLES
+
+                **Example 1:**
+                Task: "Summarize the given text."
+                Trace: Agent calls an LLM twice, then performs an extra web search.
+
+                → Output:
+                {{
+                    "score": 0.25,
+                    "reason": "The agent used redundant LLM calls and performed an unnecessary web search. Only one LLM call was required for the summary."
+                }}
+
+                **Example 2:**
+                Task: "Convert a date to ISO format."
+                Trace: Agent performs one computation directly.
+
+                → Output:
+                {{
+                    "score": 1.0,
+                    "reason": "The agent completed the task with one minimal action and no unnecessary steps."
+                }}
+
+                FINAL REMINDERS
+
+                - Efficiency = minimality. Any extra work, enrichment, or indirect approach must lower the score.
+                - Do not consider correctness, helpfulness, or reasoning quality.
+                - A “good answer” can still score **0.0** if it was achieved inefficiently.
+                - This metric is adversarial: assign the lowest score possible unless execution was provably minimal.
+
+                TASK:
+                {task}
+
+                TRACE:
+                {json.dumps(trace, indent=2, default=str)}
+
+                JSON:
+            """
+        )
+
+
+
+5.Plan Adherence
+
+
+prompt:
+
+def extract_plan_from_trace(trace: dict) -> str:
+        return textwrap.dedent(
+            f"""You are a **systems analyst** evaluating an AI agent's execution trace.
+
+                Your sole task is to extract the **explicit or clearly implied plan** the agent followed or intended to follow — *only if that plan is directly evidenced in the trace*.
+
+                STRICT RULES TO FOLLOW:
+
+                1. Source Evidence Requirement
+                - Every plan step you include **must** be directly supported by explicit text in the trace.  
+                - Acceptable evidence sources:
+                    - `"reasoning"` or `"thought"` fields inside tool calls or function invocations.
+                    - Explicit plan-like statements or lists written by the agent (e.g., “My plan is to…”).
+                - If no evidence exists for a step, DO NOT infer or invent it.
+
+                2. No Hallucination Policy 
+                - You must *not* create or rephrase steps that aren't explicitly or strongly implied by the trace.  
+                - If there is no coherent plan present, output an empty list.
+
+                3. Focus on Intent, Not Outcomes
+                - If the agent's plan is stated but execution differs, still extract the intended steps — but only if those intended steps are traceable.
+
+                4. Granularity
+                - Each step should represent a single distinct action or intention.
+                - Avoid merging multiple intentions into one step or splitting one intention into multiple steps.
+
+                5. Neutral Language
+                - Reproduce the plan steps in **neutral, minimal paraphrasing**.  
+                - Do not interpret motivation, quality, or success of actions.
+
+                OUTPUT FORMAT:
+
+                Return a JSON object with exactly this structure:
+                {{
+                    "plan": [
+                        "step 1",
+                        "step 2",
+                        ...
+                    ]
+                }}
+
+                If no plan is evidenced in the trace, return:
+                {{
+                    "plan": []
+                }}
+
+                Do not include commentary, confidence scores, or explanations.
+
+                TRACE:
+
+                {json.dumps(trace, indent=2, default=str)}
+
+                JSON:
+            """
+        )
+
+    @staticmethod
+    def evaluate_adherence(
+        user_task: str, agent_plan: str, execution_trace: dict
+    ) -> str:
+        return textwrap.dedent(
+            f"""You are an **adversarial plan adherence evaluator**. Your goal is to assign the **lowest justifiable score** based on how strictly the agent's actions in the execution trace align with its declared plan.
+
+                INPUTS:
+
+                - **User Task:** The original request or objective.
+                - **Agent Plan:** The explicit step-by-step plan the agent was supposed to follow.
+                - **Execution Trace:** A detailed record of all agent actions, reasoning, tool calls, and outputs.
+
+                EVALUATION OBJECTIVE:
+
+                Determine whether the agent **exactly and exclusively** followed its plan.  
+                You are not evaluating success, correctness, or usefulness — **only plan obedience**.
+
+                Assume **non-adherence by default** unless clear, direct evidence in the trace proves that 
+                each planned step was executed *as written* and *no additional actions occurred*.
+
+                ### STRICT ADHERENCE RULES
+
+                1. Step Verification
+                - Every step in the plan must correspond to a **verifiable, explicit** action or reasoning entry in the trace.
+                - Each step must appear in the same logical order as the plan.
+                - If a step is missing, only implied, or ambiguous, treat as **not followed**.
+
+                2. No Extraneous Actions
+                - If the trace includes **any** major action, tool call, or reasoning segment not clearly present in the plan, immediately lower the score to as low as possible.
+                - Extra or unnecessary steps are considered serious violations.
+
+                3. Order Consistency
+                - If the agent performed steps in a different order than the plan specifies, the score must be close to 0, regardless of other alignment.
+
+                4. Completeness
+                - If even one planned step is missing, skipped, or only partially reflected in the trace, the score must be lowest possible.
+
+                5. Ambiguity Handling
+                - If it is unclear whether a trace action corresponds to a plan step, treat that step as **not executed**.
+                - When uncertain, assign the **lower score**.
+
+                6. Focus Exclusively on Plan Compliance
+                - Ignore task success, reasoning quality, or correctness of outcomes. 
+                - Evaluate *only* whether the trace reflects the exact plan execution.
+
+
+                SCORING SCALE
+
+                - **1.0 — Perfect adherence**
+                - Every planned step is explicitly and verifiably present in the trace, in correct order.
+                - No skipped or added steps.
+                - No ambiguity in matching.
+
+                - **0.75 — Strong adherence**
+                - All or nearly all steps are executed in order.
+                - At most one minor deviation (e.g., a trivial reordering or minor redundant step) that does not change the plan’s structure.
+
+                - **0.5 — Partial adherence**
+                - Some steps clearly match, but others are missing, out of order, or replaced.
+                - At least one extra or ambiguous action appears.
+                - *This should be the highest score possible when there are any deviations.*
+
+                - **0.25 — Weak adherence**
+                - Only a few steps from the plan appear in the trace, or multiple extraneous actions occur.
+                - The structure or sequence of the plan is mostly lost.
+
+                - **0.0 — No adherence**
+                - The trace shows little or no resemblance to the plan.
+                - Steps are ignored, replaced, or executed in an entirely different order.
+
+                Always err toward the **lower score** when evidence is partial, ambiguous, or contradictory.
+
+                OUTPUT FORMAT:
+
+                Return a JSON object with exactly this structure:
+
+                {{
+                    "score": 0.0,
+                    "reason": "1-3 concise, factual sentences citing specific matched, missing, or extra steps."
+                }}
+
+                Requirements for `"reason"`:
+                - Reference specific plan step numbers or phrases.
+                - Mention concrete trace evidence of mismatches or additions.
+                - Avoid subjective adjectives (e.g., “mostly”, “close”, “reasonable”).
+                - Be precise and neutral.
+
+                ---
+
+                INPUTS:
+
+                User Task:
+                {user_task}
+
+                Agent Plan:
+                {agent_plan}
+
+                Execution Trace:
+                {json.dumps(execution_trace, indent=2, default=make_json_serializable)}
+
+                ---
+
+                JSON:
+            """
+        )
+
+
+
+
+
+6.Plan Quality
+
+
+prompt:
+
+def evaluate_plan_quality(user_task: str, agent_plan: list) -> str:
+        return textwrap.dedent(
+            f"""You are a **plan quality evaluator**. Your task is to critically assess the **quality, completeness, and optimality** of an AI agent's plan to accomplish the given user task.
+
+                INPUTS:
+
+                - **User Task:** The user's explicit goal or instruction.
+                - **Agent Plan:** The ordered list of steps the agent intends to follow to achieve that goal.
+
+                EVALUATION OBJECTIVE:
+
+                Judge the **intrinsic quality** of the plan — whether the plan itself is strong enough to fully and efficiently achieve the user's task.
+
+                The evaluation must be **strict**.  If the plan is incomplete, inefficient, redundant, or missing critical details, assign a very low score.
+
+                STRICT EVALUATION CRITERIA:
+
+                1. Completeness (Most Important)
+                - The plan must fully address all major requirements of the user task.  
+                - Missing even one critical subtask or dependency should reduce the score sharply.
+                - The plan must include all prerequisite actions necessary for the final outcome.
+
+                2. Logical Coherence
+                - Steps must follow a clear, rational sequence that leads directly to completing the task.  
+                - Disordered, redundant, or circular reasoning should be penalized heavily.
+                - Every step must have a clear purpose; no filler or irrelevant actions.
+
+                3. Optimality and Efficiency
+                - The plan must be **minimal but sufficient** — no unnecessary or repetitive steps.
+                - If a more direct, simpler, or logically superior plan could achieve the same outcome, the current plan should receive a lower score.
+
+                4. Level of Detail
+                - Each step should be specific enough for an agent to execute it reliably without ambiguity.  
+                - Vague steps (e.g., “Do research”, “Handle results”) that lack operational clarity 
+                    lower the score.
+
+                5. Alignment with Task
+                - The plan must explicitly and directly target the user's stated goal.  
+                - If any step diverges from the main objective, the score should drop significantly.
+
+                ---
+
+                SCORING SCALE (STRICT)
+
+                - **1.0 — Excellent plan**
+                - Fully complete, logically ordered, and optimally efficient.  
+                - No missing, redundant, or ambiguous steps.  
+                - Directly fulfills every aspect of the user task.
+
+                - **0.75 — Good plan**
+                - Covers nearly all aspects of the task with clear logic.  
+                - Minor gaps or small inefficiencies that do not block task completion.
+
+                - **0.5 — Adequate but flawed plan**
+                - Partially complete; key details missing or step order inefficient.  
+                - Some ambiguity or redundancy that would likely affect execution success.
+
+                - **0.25 — Weak plan**
+                - Major missing steps or unclear logic.  
+                - The plan would likely fail to complete the task as written.
+
+                - **0.0 — Inadequate plan**
+                - Irrelevant, incoherent, or severely incomplete plan.  
+                - Does not align with the user’s task or cannot plausibly achieve it.
+
+                *When in doubt, assign the lower score.*
+
+                OUTPUT FORMAT:
+
+                Return a JSON object with this exact structure:
+
+                {{
+                    "score": 0.0,
+                    "reason": "1-3 short, precise sentences explaining what the plan lacks or how it could fail."
+                }}
+
+                The `"reason"` must:
+                - Reference specific missing, unclear, or inefficient steps.
+                - Avoid vague language (“seems fine”, “mostly works”).
+                - Use objective terms describing gaps or weaknesses.
+
+                PROVIDED DATA
+
+                User Task:
+                {user_task}
+
+                Agent Plan:
+                {agent_plan}
+
+
+                JSON:
+            """
+        )
+
+
