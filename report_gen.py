@@ -8,6 +8,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
+from flask import Flask, request, Response
+import tempfile
+import os
+import pandas as pd
+import plotly.express as px
+import plotly.offline as plot
 
 try:
     from loguru import logger
@@ -34,6 +40,7 @@ class ReportGenerator:
         logger.info('Initializing ReportGenerator')
         self.config = config or self._get_default_config()
         self.report_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.metric_details_excel_path = Path(__file__).resolve().parent / "Detailed_Log.xlsx"
         
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration for the report generator."""
@@ -66,7 +73,16 @@ class ReportGenerator:
             'chart_height': 450
         }
 
-    
+    def _load_rca_data(self) -> pd.DataFrame:
+        try:
+            df = pd.read_excel(self.metric_details_excel_path, sheet_name="RCA")
+            df["Query"] = df["Query"].astype(str).str.strip()
+            df["violation_type"] = df["violation_type"].astype(str)
+            return df
+        except Exception as e:
+            logger.error(f"Error loading RCA sheet: {e}")
+            return pd.DataFrame()
+
     # ==================== UTILITY METHODS ====================
     
     def _find_column(self, df: pd.DataFrame, possible_names: List[str]) -> Optional[str]:
@@ -217,7 +233,14 @@ class ReportGenerator:
             charts['comparison'] = self._create_score_comparison_chart(
                 metrics_df, metrics_col, score_col, threshold_col, theme
             )
-            
+
+            base_dir = Path(__file__).resolve().parent
+
+            charts['coverage'] = self._create_test_coverage_sunburst(excel_path=base_dir / "Metrics_template.xlsx", sheet_name='Test data coverage')
+            charts['aggregated'] = self._create_aggregated_chart(metrics_df, theme)
+            charts['disaggregated'] = self._create_disaggregated_table(
+                Path(__file__).resolve().parent / "Metrics_template.xlsx"
+            )            
             return charts
             
         except Exception as e:
@@ -225,136 +248,120 @@ class ReportGenerator:
             return {}
     
     def _create_metrics_bar_chart(self, summary_df: pd.DataFrame, theme: Dict) -> str:
-        """Create metrics overview bar chart."""
         try:
-            # Transform data for plotting
-            chart_data = []
             metrics_col = self._find_column(summary_df, ['Metrics', 'Metric'])
-            
-            for _, row in summary_df.iterrows():
-                metric = row[metrics_col] if metrics_col else 'Unknown'
-                for col in summary_df.columns:
-                    if col in ['Metrics', 'Metric', 'Total TCs', 'total']:
-                        continue
-                    chart_data.append({
-                        'Metric': metric, 
-                        'Status': col, 
-                        'Count': row[col]
-                    })
-            
-            if not chart_data:
-                return "<div>No data available for metrics chart</div>"
-            
-            chart_df = pd.DataFrame(chart_data)
-            
-            fig = px.bar(
-                chart_df, 
-                x="Metric", 
-                y="Count", 
-                color="Status",
-                color_discrete_map=self.config['status_colors'],
-                barmode="group",
-                title="Metrics Performance Overview"
+            passed_col = self._find_column(summary_df, ["Passed"])
+            failed_col = self._find_column(summary_df, ["Failed"])
+            skipped_col = self._find_column(summary_df, ["Skipped"])
+    
+            metrics = summary_df[metrics_col].astype(str).tolist()
+            failed = summary_df[failed_col].fillna(0).tolist()
+            passed = summary_df[passed_col].fillna(0).tolist()
+            skipped = (
+                summary_df[skipped_col].fillna(0).tolist()
+                if skipped_col else [0] * len(metrics)
+            )    
+            fig = go.Figure()
+    
+            fig.add_bar(
+                x=metrics, 
+                y=failed, 
+                name='Failed', 
+                marker_color=self.config['status_colors']['Failed']
             )
-            
+            fig.add_bar(
+                x=metrics, 
+                y=passed, 
+                name='Passed', 
+                marker_color=self.config['status_colors']['Passed']
+            )
+            fig.add_bar(
+                x=metrics, 
+                y=skipped, 
+                name='Skipped', 
+                marker_color=self.config['status_colors']['Skipped']
+            )
+    
             fig.update_layout(
-                **self._get_chart_layout(theme),
-                xaxis_title="Metrics",
-                yaxis_title="Number of Test Cases",
+                barmode='group',
+                title='Metrics Performance Overview',
+                xaxis_title='Metrics',
+                yaxis_title='Number of Test Cases',
+                bargap=0.25,   
+                bargroupgap=0.05,  
+                width=len(metrics) * 140,  
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
                     y=1.02,
                     xanchor="center",
                     x=0.5
-                )
+                ),         
+                **self._get_chart_layout(theme)
             )
-            
+    
             return plot.plot(fig, output_type='div', include_plotlyjs=False)
-            
+    
         except Exception as e:
             logger.error(f"Error creating metrics bar chart: {e}")
             return f"<div>Error creating metrics chart: {e}</div>"
-    
+
     def _create_overall_pie_chart(self, overall_df: pd.DataFrame, theme: Dict) -> str:
-        """Create overall performance pie chart."""
         try:
-            # Look for columns containing 'passed', 'failed', 'skipped' (case insensitive)
-            status_cols = []
-            for col in overall_df.columns:
-                col_lower = col.lower()
-                if any(status in col_lower for status in ['passed', 'failed', 'skipped']):
-                    status_cols.append(col)
-            
-            if not status_cols:
-                return "<div>No status data available</div>"
-            
-            values, labels, colors = [], [], []
-            total = 0
-            
-            for col in status_cols:
-                val = overall_df[col].sum()
-                total += val
-                if val > 0:
-                    values.append(val)
-                    # Better label formatting - remove "Overall " prefix and clean up
-                    label = col.replace('Overall ', '').replace('overall_', '').replace('_', ' ').title()
-                    labels.append(f"{label} ({val})")
-                    
-                    # Determine color based on status type
-                    col_lower = col.lower()
-                    if 'passed' in col_lower:
-                        color_key = 'passed'
-                    elif 'failed' in col_lower:
-                        color_key = 'failed'
-                    elif 'skipped' in col_lower:
-                        color_key = 'skipped'
-                    else:
-                        color_key = 'passed'  # default
-                    
-                    colors.append(self.config['status_colors'].get(color_key, theme['primary_color']))
-            
-            if not values:
-                return "<div>No data available for overall chart</div>"
-            
-            fig = px.pie(
-                values=values,
-                names=labels,
-                title="Overall Performance Distribution",
-                hole=0.4,
-                color_discrete_sequence=colors
+            # Force numeric extraction
+            passed = int(overall_df[[c for c in overall_df.columns if 'passed' in c.lower()][0]].sum())
+            failed = int(overall_df[[c for c in overall_df.columns if 'failed' in c.lower()][0]].sum())
+            skipped = int(overall_df[[c for c in overall_df.columns if 'skipped' in c.lower()][0]].sum()) if \
+                    any('skipped' in c.lower() for c in overall_df.columns) else 0
+    
+            labels = []
+            values = []
+            colors = []
+    
+            if passed > 0:
+                labels.append(f"Passed ({passed})")
+                values.append(passed)
+                colors.append(self.config['status_colors']['passed'])
+    
+            if failed > 0:
+                labels.append(f"Failed ({failed})")
+                values.append(failed)
+                colors.append(self.config['status_colors']['failed'])
+    
+            if skipped > 0:
+                labels.append(f"Skipped ({skipped})")
+                values.append(skipped)
+                colors.append(self.config['status_colors']['skipped'])
+    
+            total = sum(values)
+    
+            fig = go.Figure(
+                data=[go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.4,
+                    marker=dict(colors=colors),
+                    textinfo="label+percent",
+                    hoverinfo="label+percent+value"
+                )]
             )
-            
-            fig.update_traces(
-                textposition='inside',
-                textinfo='label+percent',
-                textfont_size=12,
-                hovertemplate="<b>%{label}</b><br>Percentage: %{percent}<extra></extra>"
-            )
-            
+    
             fig.update_layout(
+                title="Overall Performance Distribution",
                 **self._get_chart_layout(theme),
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom", 
-                    y=-0.2,
-                    xanchor="center",
-                    x=0.5
-                ),
-                annotations=[{
-                    "text": f"Total<br>{total}",
-                    "x": 0.5, "y": 0.5,
-                    "font_size": 16,
-                    "showarrow": False
-                }]
+                annotations=[dict(
+                    text=f"Total<br>{total}",
+                    x=0.5, y=0.5,
+                    font_size=16,
+                    showarrow=False
+                )]
             )
-            
+    
             return plot.plot(fig, output_type='div', include_plotlyjs=False)
-            
+    
         except Exception as e:
             logger.error(f"Error creating overall pie chart: {e}")
-            return f"<div>Error creating overall chart: {e}</div>"
+            return f"<div>Error creating overall chart: {e}</div>"  
     
     def _create_score_comparison_chart(self, metrics_df: pd.DataFrame, metrics_col: str,
                                      score_col: str, threshold_col: str, theme: Dict) -> str:
@@ -405,6 +412,9 @@ class ReportGenerator:
                 title="Score vs Threshold Comparison",
                 xaxis_title="Metrics",
                 yaxis_title="Score",
+                bargap=0.25,          
+                bargroupgap=0.05,    
+                width=len(metrics) * 140,
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
@@ -421,8 +431,341 @@ class ReportGenerator:
             
         except Exception as e:
             logger.error(f"Error creating score comparison chart: {e}")
-            return f"<div>Error creating comparison chart: {e}</div>"
+            return f"<div>Error creating comparison chart: {e}</div>" 
+ 
+    def _create_test_coverage_sunburst(self, excel_path: str, sheet_name: str) -> str:
+        """
+        Create Test Coverage Sunburst chart
+        - Topic % = percentRoot
+        - Sub-topic % = percentParent
+        - Shows Count + Percentage EXACTLY like existing report.html
+        """
+        try:
+            # ===============================
+            # READ EXCEL
+            # ===============================
+            df = pd.read_excel(excel_path, sheet_name=sheet_name)
+    
+            df["topic"] = df["topic"].astype(str).str.strip().str.title()
+            df["sub_topic"] = df["sub_topic"].astype(str).str.strip().str.title()
+    
+            overall_count = len(df)
+    
+            # ===============================
+            # TOPIC COUNTS
+            # ===============================
+            topic_df = (
+                df.groupby("topic")
+                .size()
+                .reset_index(name="topic_count")
+            )
+    
+            topic_df["topic_percentage"] = (
+                topic_df["topic_count"] / overall_count * 100
+            ).round(2)
+    
+            # ===============================
+            # SUB-TOPIC COUNTS
+            # ===============================
+            subtopic_df = (
+                df.groupby(["topic", "sub_topic"])
+                .size()
+                .reset_index(name="subtopic_count")
+            )
+    
+            subtopic_df = subtopic_df.merge(
+                topic_df, on="topic", how="left"
+            )
+    
+            subtopic_df["subtopic_percentage"] = (
+                subtopic_df["subtopic_count"] /
+                subtopic_df["topic_count"] * 100
+            ).round(2)
+    
+            # ===============================
+            # SUNBURST
+            # ===============================
+            fig = px.sunburst(
+                subtopic_df,
+                path=["topic", "sub_topic"],
+                values="subtopic_count",
+                color="topic",
+                custom_data=[
+                    "topic_percentage",
+                    "subtopic_percentage"
+                ],
+                title="Test Coverage – Topic & Sub-topic Distribution"
+            )
+    
+            # ===============================
+            # CONDITIONAL TEXT DISPLAY
+            # ===============================
+            fig.update_traces(
+                texttemplate=(
+                    "<b>%{label}</b><br>"
+                    "Count: %{value}<br>"
+                    "%{percentParent:.0%}"
+                ),
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Count: %{value}<br>"
+                    "%{percentParent:.2%}"
+                    "<extra></extra>"
+                )
+            )
+    
+            # ===============================
+            # FIX LABELS USING LEVEL LOGIC
+            # ===============================
+            fig.update_traces(
+                texttemplate=(
+                    "<b>%{label}</b><br>"
+                    "Count: %{value}"
+                ),
+                selector=dict(level=0)
+            )
+
+            fig.update_traces(
+                texttemplate=(
+                    "<b>%{label}</b><br>"
+                    "Count: %{value}<br>"
+                    "%{percentRoot:.2%}"
+                ),
+                selector=dict(level=1)
+            )
+    
+            fig.update_traces(
+                texttemplate=(
+                    "<b>%{label}</b><br>"
+                    "Count: %{value}<br>"
+                    "%{percentParent:.2%}"
+                ),
+                selector=dict(level=2)
+            )
+    
+            fig.update_layout(
+                margin=dict(t=60, l=20, r=20, b=20)
+            )
+    
+            return plot.plot(
+                fig,
+                output_type="div",
+                include_plotlyjs="cdn",
+            )
+    
+        except Exception as e:
+            logger.error(f"Error creating test coverage sunburst: {e}")
+            return "<div class='text-center p-3'><b>Error loading test coverage</b></div>"
+
+    def _create_run_comparison_chart(self, prev_df: pd.DataFrame, curr_df: pd.DataFrame, theme: Dict) -> str:
+        try:
+            if prev_df.empty or curr_df.empty:
+                return "<div class='text-center p-3'><b>No data available</b></div>"
+    
+            # helper to find an existing column from candidate names (no fallback to first column)
+            def find_existing(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
+                for c in candidates:
+                    if c in df.columns:
+                        return c
+                return None
+    
+            metric_col_prev = find_existing(prev_df, ["Metric", "Metrics", "metric"])
+            score_col_prev = find_existing(prev_df, ["Score", "aggregate_score", "score"])
+    
+            metric_col_curr = find_existing(curr_df, ["Metric", "Metrics", "metric"])
+            score_col_curr = find_existing(curr_df, ["Score", "aggregate_score", "score"])
+    
+            # If any required column is missing, show friendly message
+            if not all([metric_col_prev, score_col_prev, metric_col_curr, score_col_curr]):
+                return "<div class='text-center p-3'><b>No data available</b></div>"
+    
+            prev_df = prev_df[[metric_col_prev, score_col_prev]].rename(
+                columns={metric_col_prev: "Metric", score_col_prev: "Previous"}
+            )
+            curr_df = curr_df[[metric_col_curr, score_col_curr]].rename(
+                columns={metric_col_curr: "Metric", score_col_curr: "Current"}
+            )
+    
+            merged = pd.merge(prev_df, curr_df, on="Metric", how="inner")
+    
+            # If merge resulted in no common metrics, show friendly message
+            if merged.empty:
+                return "<div class='text-center p-3'><b>No data available</b></div>"
+    
+            fig = go.Figure()
+    
+            fig.add_bar(
+                x=merged["Metric"],
+                y=pd.to_numeric(merged["Previous"], errors="coerce"),
+                name="Previous Run",
+                marker_color=theme["secondary_color"]
+            )
+    
+            fig.add_bar(
+                x=merged["Metric"],
+                y=pd.to_numeric(merged["Current"], errors="coerce"),
+                name="Current Run",
+                marker_color=theme["primary_color"]
+            )
+    
+            fig.update_layout(
+                barmode="group",
+                title="Run Comparison (Previous vs Current)",
+                xaxis_title="Metrics",
+                yaxis_title="Score",
+                **self._get_chart_layout(theme)
+            )
+    
+            return plot.plot(fig, output_type="div", include_plotlyjs=False)
+    
+        except Exception as e:
+            logger.error(f"Run comparison error: {e}")
+            return "<div class='text-center p-3'><b>No data available</b></div>"
+
+    def _create_aggregated_chart(self, metrics_df: pd.DataFrame, theme: Dict) -> str:
+        try:
+            df = metrics_df.copy()
+
+            avg_scores = pd.to_numeric(df['aggregate_score'], errors="coerce").tolist()
+            metrics = df['Metrics'].astype(str).tolist()
+    
+            fig = go.Figure()
+    
+            fig.add_bar(
+                x=metrics,
+                y=avg_scores,
+                name="Average Score",
+                marker_color=theme["primary_color"]
+            )
+    
+            fig.update_layout(
+                title="Aggregated Metrics (Average Score)",
+                xaxis_title="Metrics",
+                yaxis_title="Score",
+                legend=dict(
+                    orientation="h",
+                    y=1.02,
+                    x=0.5,
+                    xanchor="center"
+                ),
+                **self._get_chart_layout(theme)
+            )
+    
+            return plot.plot(
+                fig,
+                output_type="div",
+                include_plotlyjs=False
+            )
+    
+        except Exception as e:
+            logger.error(f"Error creating aggregated chart: {e}")
+            return f"<div>Error creating aggregated chart: {e}</div>"
         
+    def _create_disaggregated_table(self, excel_path: Path) -> str:
+        import json
+        import pandas as pd
+    
+        # ===============================
+        # READ EXCEL
+        # ===============================
+        df = pd.read_excel(
+            excel_path,
+            sheet_name="Disaggregated View",
+            header=None
+        )
+
+        agg_scores = {}
+ 
+        for col in range(2, len(df.columns)):
+            metric = str(df.iloc[0, col]).strip()
+            val = df.iloc[1, col]
+        
+            if metric and metric.lower() != "nan":
+                try:
+                    agg_scores[metric] = float(val)
+                except Exception:
+                    agg_scores[metric] = None
+    
+        parsed = []
+        i = 0
+    
+        # ===============================
+        # PARSE EXCEL STRUCTURE
+        # ===============================
+        while i < len(df):
+            cell = str(df.iloc[i, 2]).strip().lower()  # Column C
+    
+            # Detect "Topic" marker row
+            if cell == "topic":
+                topic = str(df.iloc[i + 1, 2]).strip()
+                sub_topic = str(df.iloc[i + 1, 3]).strip()
+    
+                records_row = df.iloc[i + 1]   # Total
+                pass_row = df.iloc[i + 2]      # Passed
+                fail_row = df.iloc[i + 3]      # Failed  
+                    
+                metrics_data = {}
+    
+                # Metrics start from column E (index 4)
+                for col in range(4, len(df.columns)):
+                    metric_name = str(df.iloc[i, col]).strip()
+                    if not metric_name or metric_name.lower() == "nan":
+                        continue
+    
+                    try:
+                        total_m = int(str(records_row[col]).split()[0])
+                        passed_m = int(str(pass_row[col]).split()[0])
+                        failed_m = int(str(fail_row[col]).split()[0])                   
+                    except Exception:
+                        continue
+    
+                    metrics_data[metric_name] = {
+                        "total": total_m,
+                        "passed": passed_m,
+                        "failed": failed_m,
+                        "aggregate_score": agg_scores.get(metric_name)
+                    }
+    
+                parsed.append({
+                    "topic": topic,
+                    "sub_topic": sub_topic,
+                    "metrics": metrics_data
+                })
+    
+                # Skip to next block
+                i += 5
+            else:
+                i += 1
+    
+        # ===============================
+        # HTML + JS
+        # ===============================
+        return f"""
+        <div class="card">
+            <div class="card-header">
+                <h3>🔍 Disaggregated Analysis</h3>
+            </div>
+        
+            <div class="card-content">
+                <label>Topic</label><br>
+                <select id="topicSelect"></select>
+                <br><br>
+                <label>Sub-topic</label><br>
+                <div id="subTopicWrapper" class="multi-select">
+                    <div id="selectedSubTopics" class="chips"></div>
+                    <input id="subTopicInput" placeholder="Select sub-topics" readonly/>
+                    <div id="subTopicDropdown" class="dropdown"></div>
+                </div>
+                <br><br>
+                <div id="disaggChart"></div>
+            </div>
+        </div>
+    
+        <script>
+            const DISAGG_DATA = {json.dumps(parsed)};
+        </script>
+            """
+
     def _get_chart_layout(self, theme: Dict) -> Dict:
         """Get common chart layout configuration."""
         return {
@@ -461,44 +804,106 @@ class ReportGenerator:
         """
         try:
             modal_data = {}
-            
+
+            # Defensive loading of metric details workbook (may be missing in some environments)
+            metric_sheets = {}
+            try:
+                if self.metric_details_excel_path.exists():
+                    xls = pd.ExcelFile(self.metric_details_excel_path)
+                    for sheet in xls.sheet_names:
+                        try:
+                            metric_sheets[sheet] = pd.read_excel(xls, sheet_name=sheet)
+                        except Exception:
+                            # skip unreadable sheets
+                            continue
+                else:
+                    logger.warning(f"Metric details file not found: {self.metric_details_excel_path}")
+            except Exception as e:
+                logger.warning(f"Unable to read metric details excel: {e}")
+                metric_sheets = {}
+
+            # Create case-insensitive mapping from normalized sheet name -> original sheet name
+            normalized_sheet_map = {str(s).strip().lower(): s for s in metric_sheets.keys()}
+
             for idx, row in df.iterrows():
-                # Find context column flexibly
-                context_text = self._get_context_text(row)
-                
-                # Base modal data structure
                 modal_data[idx] = {
-                    'question': self._clean_text(row.get('question', 'N/A')),
-                    'response': self._clean_text(row.get('response', 'N/A')),
-                    'context': context_text,
-                    'ground_truth_response': self._clean_text(row.get('ground_truth_response', 'N/A')),
+                    'query': self._clean_text(row.get('Query', 'N/A')),
+                    'response': self._clean_text(row.get('Response', 'N/A')),
                     'timestamp': self.report_timestamp,
                     'metrics': {}
                 }
-                
-                # Add optional fields if they exist
-                self._add_optional_fields(modal_data[idx], row, df.columns)
-                
-                # Add metrics data
+
+                # Ensure metric_fields contains an entry for each metric (keeps JS stable)
+                modal_data[idx]["metric_fields"] = {}
+
+                # Map sheet rows to metric names (case-insensitive)
+                for metric in metrics:
+                    norm_metric = str(metric).strip().lower()
+                    if norm_metric in normalized_sheet_map:
+                        sheet_name = normalized_sheet_map[norm_metric]
+                        metric_df = metric_sheets.get(sheet_name)
+                        if isinstance(metric_df, pd.DataFrame) and idx < len(metric_df):
+                            query_col = self._find_column(metric_df, ['Query', 'query', 'Question'])
+                            # Normalized query from details dataframe
+                            details_query = str(row.get('Query', '')).strip()
+                            found_entry = {}
+ 
+                            if query_col and query_col in metric_df.columns:
+                                # Normalize metric sheet query values and compare
+                                # Use exact match after stripping; also try replacing newline variations
+                                def normalize_q(x):
+                                    return str(x).strip().replace('\r\n', '\n').replace('\r', '\n')
+ 
+                                normalized_target = normalize_q(details_query)
+                                # mask where normalized values equal
+                                mask = metric_df[query_col].astype(str).apply(normalize_q) == normalized_target
+                                matched = metric_df[mask]
+ 
+                                if not matched.empty:
+                                    # If single match, return a dict; if multiple, return list of dicts
+                                    if len(matched) == 1:
+                                        found_entry = matched.iloc[0].replace({pd.NA: None}).to_dict()
+                                    else:
+                                        found_entry = [
+                                            r.replace({pd.NA: None}).to_dict()
+                                            for _, r in matched.iterrows()
+                                        ]
+                                else:
+                                    # No exact match — try a looser comparison (strip and collapse whitespace)
+                                    def collapse_ws(s):
+                                        return ' '.join(str(s).split())
+                                    target_ws = collapse_ws(details_query)
+                                    mask2 = metric_df[query_col].astype(str).apply(collapse_ws) == target_ws
+                                    matched2 = metric_df[mask2]
+                                    if not matched2.empty:
+                                        if len(matched2) == 1:
+                                            found_entry = matched2.iloc[0].replace({pd.NA: None}).to_dict()
+                                        else:
+                                            found_entry = [
+                                                r.replace({pd.NA: None}).to_dict()
+                                                for _, r in matched2.iterrows()
+                                            ]
+                                    else:
+                                        found_entry = {}
+                            else:
+                                # No Query column found in metric sheet — keep empty dict to avoid JS errors
+                                found_entry = {}
+ 
+                            modal_data[idx]["metric_fields"][metric] = found_entry
+                        else:
+                            modal_data[idx]["metric_fields"][metric] = {}
+                    else:
+                        # Leave empty dict if no matching sheet - avoids JS key errors
+                        modal_data[idx]["metric_fields"][metric] = {}
+
+                # Add metrics data (scores / statuses / additional fields)
                 self._add_metrics_data(modal_data[idx], row, metrics, thresholds)
-                
-            return modal_data
             
+            return modal_data
+
         except Exception as e:
             logger.error(f"Error preparing modal data: {e}")
             return {}
-    
-    def _get_context_text(self, row: pd.Series) -> str:
-        """Extract context text from various possible column names."""
-        if 'context' in row.index:
-            return self._clean_text(row['context'])
-        
-        # Search for context-like columns
-        context_cols = [col for col in row.index if 'context' in col.lower()]
-        if context_cols:
-            return self._clean_text(row[context_cols[0]])
-        
-        return 'N/A'
     
     def _clean_text(self, text: Any) -> str:
         """Clean and format text for display."""
@@ -510,46 +915,6 @@ class ReportGenerator:
             return 'N/A'
         
         return text
-    
-    def _add_optional_fields(self, modal_item: Dict, row: pd.Series, columns: List[str]) -> None:
-        """Add optional fields to modal data if they exist in the DataFrame."""
-        optional_field_map = {
-            'citations': ['citations', 'citation'],
-            'meta_data': ['meta_data', 'admin_meta_data'],
-            'project_context': ['project_context'],
-            'selected_pills': ['persona', 'chat_options'],
-            'execution_time': ['execution_time', 'response_time'],
-            'model_version': ['model_version', 'model'],
-            'confidence_score': ['confidence', 'confidence_score']
-        }
-        
-        for target_field, possible_cols in optional_field_map.items():
-            if target_field == 'meta_data':
-                # Special handling for metadata
-                meta_dict = {}
-                for col in possible_cols:
-                    if col in columns:
-                        meta_dict[col] = self._clean_text(row.get(col, ''))
-                if meta_dict:
-                    modal_item['meta_data'] = json.dumps(meta_dict, indent=2)
-                    
-            elif target_field == 'selected_pills':
-                # Special handling for pills/persona
-                pills_dict = {}
-                for col in possible_cols:
-                    if col in columns:
-                        pills_dict[col] = self._clean_text(row.get(col, ''))
-                if pills_dict:
-                    modal_item['selected_pills'] = json.dumps(pills_dict, indent=2)
-                    
-            else:
-                # Standard field handling
-                for col in possible_cols:
-                    if col in columns:
-                        modal_item[target_field] = self._clean_text(row.get(col, 'N/A'))
-                        break
-                else:
-                    modal_item[target_field] = 'N/A'
     
     def _add_metrics_data(self, modal_item: Dict, row: pd.Series, metrics: List[str], thresholds: Dict) -> None:
         """Add metrics data to modal item."""
@@ -600,50 +965,10 @@ class ReportGenerator:
                                 <p id="modalResponse">N/A</p>
                             </div>
                         </div>
-                        
-                        <div class="modal-section">
-                            <h4>Citations</h4>
-                            <p id="modalCitations">N/A</p>
-                        </div>
-                        
-                        <div class="collapsible-section">
-                            <div class="collapsible-header" onclick="toggleCollapsible('context')">
-                                <h4>Context</h4>
-                                <span class="toggle-icon" id="contextIcon">▼</span>
-                            </div>
-                            <div class="collapsible-content collapsed" id="contextContent">
-                                <p id="modalContext">N/A</p>
-                            </div>
-                        </div>
-                        
-                        <div class="collapsible-section">
-                            <div class="collapsible-header" onclick="toggleCollapsible('metadata')">
-                                <h4>Documents & Metadata</h4>
-                                <span class="toggle-icon" id="metadataIcon">▼</span>
-                            </div>
-                            <div class="collapsible-content collapsed" id="metadataContent">
-                                <p id="modalMetadata">N/A</p>
-                            </div>
-                        </div>
-                        
-                        <div class="collapsible-section">
-                            <div class="collapsible-header" onclick="toggleCollapsible('projectContext')">
-                                <h4>Project Context</h4>
-                                <span class="toggle-icon" id="projectContextIcon">▼</span>
-                            </div>
-                            <div class="collapsible-content collapsed" id="projectContextContent">
-                                <p id="modalProjectContext">N/A</p>
-                            </div>
-                        </div>
-                        
-                        <div class="modal-section">
-                            <h4>Selected Configuration</h4>
-                            <p id="modalConfiguration">N/A</p>
-                        </div>
-                        
-                        <div class="modal-section">
-                            <h4>Ground Truth Response</h4>
-                            <p id="modalGroundTruth">N/A</p>
+
+                       <!-- Metric fields container: each Excel column will be rendered here as its own .modal-section -->
+                        <div id="metricSheetFieldsContainer">
+                            <div id="metricSheetFields">N/A</div>
                         </div>
                     </div>
                     
@@ -890,6 +1215,62 @@ class ReportGenerator:
         .chart-card.full-width {{
             grid-column: 1 / -1;
         }}
+
+        .multi-select {{
+            position: relative;
+            width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 6px;
+        }}
+        
+        .multi-select input {{
+            border: none;
+            outline: none;
+            width: 100%;
+            cursor: pointer;
+        }}
+        
+        .chips {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 4px;
+        }}
+        
+        .chip {{
+            background: #e0e0e0;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+        }}
+        
+        .chip span {{
+            margin-left: 6px;
+            cursor: pointer;
+        }}
+        
+        .dropdown {{
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            width: 100%;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+            z-index: 10;
+        }}
+        
+        .dropdown div {{
+            padding: 6px;
+            cursor: pointer;
+        }}
+        
+        .dropdown div:hover {{
+            background: #f0f0f0;
+        }}
         
         /* =============== TABLES =============== */
         .table-container {{
@@ -934,6 +1315,99 @@ class ReportGenerator:
         
         .modern-table tr:nth-child(even):hover {{
             background: rgba(46, 134, 171, 0.04);
+        }}
+
+        .details-table {{
+            width: max-content;       
+            min-width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            table-layout: auto;       
+        }}
+
+        .details-table th {{
+            background: linear-gradient(135deg, {theme['primary_color']} 0%, {theme['secondary_color']} 100%);
+            color: white;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            border: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }}
+
+        .details-table td {{
+            padding: 12px;
+            border-bottom: 1px solid {theme['border_color']};
+            vertical-align: top;
+        }}
+        
+        .details-table tr:hover {{
+            background: rgba(46, 134, 171, 0.04);
+        }}
+        
+        .details-table tr:nth-child(even) {{
+            background: rgba(0,0,0,0.02);
+        }}
+        
+        .details-table tr:nth-child(even):hover {{
+            background: rgba(46, 134, 171, 0.04);
+        }}
+
+        .details-table td:first-child,
+        .details-table td:nth-child(2) {{
+            white-space: normal;
+            max-width: 600px;
+        }}
+
+        .details-table th {{
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            resize: none;               
+            overflow: hidden;
+        }}
+
+        .resizer {{
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 6px;
+            height: 100%;
+            cursor: col-resize;
+            user-select: none;
+        }}
+
+        .details-table td {{
+            white-space: normal;     
+            word-break: break-word;
+            max-width: 600px;
+        }}
+
+       .table-container {{
+            overflow-x: auto;        
+            overflow-y: visible;
+            max-width: 100%;
+        }}
+
+        .metric-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }}
+        
+        .metric-table th,
+        .metric-table td {{
+            border: 1px solid #ddd;
+            padding: 8px;
+            vertical-align: top;
+        }}
+        
+        .metric-table th {{
+            background-color: #7393B3;
+            font-weight: 600;
+            text-transform: capitalize;
         }}
         
         /* =============== STATUS INDICATORS =============== */
@@ -1329,7 +1803,42 @@ class ReportGenerator:
         .fade-in {{
             animation: fadeIn 0.5s ease-in;
         }}
+
+        /* Metric sheet fields container tweaks */
+        #metricSheetFields {{
+            padding: 0;
+            margin: 0;
+        }}
         
+        .modal-section h4 {{
+            margin-bottom: 8px;
+        }}
+
+         .tab-content {{
+             display: none;
+             width: 100%;
+         }}
+
+        .tab-content {{
+            display: none;
+            width: 100%;
+        }}
+ 
+        .tab-content.active {{
+            display: block;
+            height: auto;
+            overflow: visible;
+        }}
+
+        .charts-grid {{
+            display: block;          
+            width: 100%;
+        }}
+ 
+        .chart-card {{
+            overflow: visible;
+        }}
+
         /* =============== UTILITY CLASSES =============== */
         .text-center {{ text-align: center; }}
         .text-right {{ text-align: right; }}
@@ -1486,15 +1995,17 @@ class ReportGenerator:
             
             # Start table container
             html.append('<div class="table-container">')
-            html.append('<table class="modern-table">')
+            html.append('<table class="details-table">')
             html.append('<thead><tr>')
-            html.append('<th style="min-width: 200px;">Question</th>')
-            html.append('<th style="min-width: 200px;">Response</th>')
+            html.append('<th>Question</th>')
+            html.append('<th>Response</th>')
             
             # Add metric headers
             for metric in metrics:
                 display_name = metric.replace('_', ' ').title()
-                html.append(f'<th class="text-center" style="min-width: 120px;">{display_name}</th>')
+                html.append(f'<th class="text-center">{display_name}</th>')
+            
+            html.append('<th>RCA</th>')
             
             html.append('</tr></thead>')
             html.append('<tbody id="tableBody"></tbody>')
@@ -1513,6 +2024,35 @@ class ReportGenerator:
             logger.error(f"Error generating details table: {e}")
             return f"<div class='alert alert-error'>Error generating details table: {e}</div>"
 
+    def _generate_secondary_llm_table(self, df: pd.DataFrame, metrics: List[str]) -> str:
+        try:
+            if df.empty:
+                return "<div class='text-center p-3'>No details data available</div>"
+            html = []
+            html.append('<div class="table-container">')
+            html.append('<table class="details-table">')        
+            html.append('<thead><tr>')
+            html.append('<th>Question</th>')
+            html.append('<th>Response</th>')
+        
+            for metric in metrics:
+                html.append(f'<th>Primary_{metric}</th>')
+                html.append(f'<th>Secondary_{metric}</th>')
+        
+            html.append('</tr></thead>')
+            html.append('<tbody id="secondaryTableBody"></tbody>')
+            html.append('</table>')
+            html.append('</div>')
+
+            html.append(self._generate_secondary_pagination_controls())
+
+            html.append(self._generate_secondary_llm_javascript(df, metrics))
+        
+            return "\n".join(html)
+
+        except Exception as e:
+            logger.error(f"Error generating secondary llm table: {e}")
+            return f"<div class='alert alert-error'>Error generating secondary llm table: {e}</div>"
     
     def _generate_pagination_controls(self) -> str:
         """Generate pagination controls HTML."""
@@ -1532,6 +2072,26 @@ class ReportGenerator:
             </div>
         </div>
         """
+
+    def _generate_secondary_pagination_controls(self) -> str:
+        return """
+        <div class="pagination-container">
+            <div class="pagination-controls">
+                <select id="secondaryRowsPerPage" class="rows-selector" onchange="secondaryChangeRowsPerPage()">
+                    <option value="10">10 rows/page</option>
+                    <option value="25">25 rows/page</option>
+                    <option value="50">50 rows/page</option>
+                    <option value="100">100 rows/page</option>
+                </select>
+            </div>
+    
+            <div class="pagination-controls" id="secondaryPaginationButtons"></div>
+    
+            <div class="page-info">
+                <span id="secondaryPageInfo">Page 1 of 1</span>
+            </div>
+        </div>
+        """
     
     def _generate_table_javascript(self, df: pd.DataFrame, metrics: List[str]) -> str:
         """
@@ -1547,11 +2107,20 @@ class ReportGenerator:
         try:
             # Prepare table data as JSON
             table_data = []
+
+            rca_df = self._load_rca_data()
+            rca_map = {
+                row["Query"]: row.to_dict()
+                for _, row in rca_df.iterrows()
+            }
             
             for idx, row in df.iterrows():
-                # Prepare question and response (truncated for table display)
-                question_short = self._truncate_text(str(row.get('question', 'N/A')), 50)
-                response_short = self._truncate_text(str(row.get('response', 'N/A')), 50)
+                # Prepare query and response
+                question_short = str(row.get('Query', 'N/A'))
+                response_short = str(row.get('Response', 'N/A'))
+
+                question_short = question_short.replace('\n', '<br>')
+                response_short = response_short.replace('\n', '<br>')
                 
                 # Prepare metric data
                 metric_cells = {}
@@ -1582,11 +2151,26 @@ class ReportGenerator:
                         'clickable': formatted_score != 'N/A'
                     }
                 
+                rca_row = rca_map.get(
+                    question_short.replace("<br>", "\n").strip(),
+                    {}
+                )
+            
+                violation = str(rca_row.get("violation_type", "")).lower()
+                
                 table_data.append({
                     'index': int(idx),
-                    'question': question_short,
+                    'query': question_short,
                     'response': response_short,
-                    'metrics': metric_cells
+                    'metrics': metric_cells,
+                    'rca': {
+                        "violation_type": violation,
+                        "details": {
+                            k: ("N/A" if pd.isna(v) else v)
+                            for k, v in rca_row.items()
+                            if k.lower() != "violation_type"
+                        }
+                    }
                 })
             
             # Convert to JSON for JavaScript
@@ -1620,7 +2204,7 @@ class ReportGenerator:
                     html += '<tr>';
                     
                     // Question and Response columns
-                    html += `<td>${{rowData.question}}</td>`;
+                    html += `<td>${{rowData.query}}</td>`;
                     html += `<td>${{rowData.response}}</td>`;
                     
                     // Metric columns
@@ -1640,7 +2224,24 @@ class ReportGenerator:
                             </td>`;
                         }}
                     }});
+
+                    const rca = rowData.rca;
+                    if (rca && rca.violation_type) {{
+                        const isNone = rca.violation_type.toLowerCase() === "none";
+                        const colorClass = isNone ? "status-passed" : "status-failed";
                     
+                        html += `
+                    <td class="text-center">
+                    <span class="status-cell ${{colorClass}}"
+                                onclick="openRcaModal(${{i}})"
+                                title="Click for RCA">
+                                ${{isNone ? "No Violation" : "Violation"}}
+                    </span>
+                    </td>`;
+                    }} else {{
+                        html += `<td class="text-center">N/A</td>`;
+                    }}   
+
                     html += '</tr>';
                 }}
                 
@@ -1738,6 +2339,52 @@ class ReportGenerator:
             
             // Initialize table when DOM is loaded
             document.addEventListener('DOMContentLoaded', initializeTable);
+
+            document.addEventListener("DOMContentLoaded", () => {{
+                const table = document.querySelector(".details-table");
+                if (!table) return;
+            
+                const ths = table.querySelectorAll("th");
+            
+                ths.forEach((th, index) => {{
+                    const resizer = document.createElement("div");
+                    resizer.className = "resizer";
+                    th.appendChild(resizer);
+            
+                    let startX, startWidth;
+            
+                    resizer.addEventListener("mousedown", (e) => {{
+                        startX = e.pageX;
+                        startWidth = th.offsetWidth;
+            
+                        document.addEventListener("mousemove", onMouseMove);
+                        document.addEventListener("mouseup", onMouseUp);
+                    }});
+            
+                    function onMouseMove(e) {{
+                        const newWidth = startWidth + (e.pageX - startX);
+                        if (newWidth > 50) {{
+                            th.style.width = newWidth + "px";
+                            syncColumnWidth(index, newWidth);
+                        }}
+                    }}
+            
+                    function onMouseUp() {{
+                        document.removeEventListener("mousemove", onMouseMove);
+                        document.removeEventListener("mouseup", onMouseUp);
+                    }}
+                }});
+            
+                function syncColumnWidth(colIndex, width) {{
+                    const rows = table.querySelectorAll("tr");
+                    rows.forEach(row => {{
+                        const cell = row.children[colIndex];
+                        if (cell) {{
+                            cell.style.width = width + "px";
+                        }}
+                    }});
+                }}
+            }});
             </script>
             """
             
@@ -1745,7 +2392,318 @@ class ReportGenerator:
             logger.error(f"Error generating table JavaScript: {e}")
             return f"<script>console.error('Error generating table JavaScript: {e}');</script>"
 
+    def _generate_secondary_llm_javascript(self, df: pd.DataFrame, metrics: List[str]) -> str:
+        try:
+            table_data = []
 
+            for idx, row in df.iterrows():
+                # Prepare query and response
+                question_short = str(row.get('Query', 'N/A'))
+                response_short = str(row.get('Response', 'N/A'))
+
+                question_short = question_short.replace('\n', '<br>')
+                response_short = response_short.replace('\n', '<br>')
+                
+                # Prepare metric data
+                metric_cells = {}
+                for metric in metrics:
+                    status_col = f"{metric}_status"
+                    status = row.get(status_col, 'Unknown')
+                    score = row.get(metric, 'N/A')
+                    
+                    # Format score
+                    if pd.notna(score) and isinstance(score, (int, float)):
+                        formatted_score = f'{score:.3f}'
+                    else:
+                        formatted_score = str(score) if score != 'N/A' else 'N/A'
+                    
+                    # Determine CSS class
+                    css_class = 'status-unknown'
+                    if str(status).lower() == 'passed':
+                        css_class = 'status-passed'
+                    elif str(status).lower() == 'failed':
+                        css_class = 'status-failed'
+                    elif str(status).lower() == 'skipped':
+                        css_class = 'status-skipped'
+                    
+                    metric_cells[metric] = {
+                        'value': formatted_score,
+                        'status': status,
+                        'class': css_class,
+                        'clickable': formatted_score != 'N/A'
+                    }
+
+                table_data.append({'index': int(idx),
+                    'query': question_short,
+                    'response': response_short,
+                    'metrics': metric_cells
+                })
+
+            secondary_meta_map = {}  # normalized eval_name -> list of row dicts (excluding eval_name & trace_id)
+            try:
+                # Prefer the configured metric_details_excel_path, else fallback to Metrics_template.xlsx near the script
+                excel_candidates = []
+                if self.metric_details_excel_path and self.metric_details_excel_path.exists():
+                    excel_candidates.append(self.metric_details_excel_path)
+                # fallback candidate
+                base_dir = Path(__file__).resolve().parent
+                fallback_path = base_dir / "Metrics_template.xlsx"
+                if fallback_path.exists():
+                    excel_candidates.append(fallback_path)
+    
+                loaded = False
+                sec_df = None
+                for excel_file in excel_candidates:
+                    try:
+                        xls = pd.ExcelFile(excel_file)
+                        if "Secondary LLM" in xls.sheet_names:
+                            sec_df = pd.read_excel(xls, sheet_name="Secondary LLM")
+                            loaded = True
+                            break
+                    except Exception:
+                        continue
+    
+                if loaded and sec_df is not None:
+                    # Normalize column names to strings and strip
+                    sec_df = sec_df.rename(columns=lambda c: str(c).strip())
+                    # Build mapping grouped by eval_name (case-insensitive)
+                    for _, srow in sec_df.iterrows():
+                        eval_name = str(srow.get("eval_name", "")).strip()
+                        if not eval_name:
+                            continue
+                        key = eval_name.strip().lower()
+                        # Build a dict of remaining fields excluding eval_name and trace_id
+                        meta = {}
+                        for col in sec_df.columns:
+                            if col.lower() in ("eval_name", "trace_id"):
+                                continue
+                            # Convert NaN to None for JSON friendliness
+                            val = srow.get(col)
+                            if pd.isna(val):
+                                val = None
+                            meta[col] = val
+                        secondary_meta_map.setdefault(key, []).append(meta)
+            except Exception as e:
+                # If anything fails, keep secondary_meta_map empty (graceful fallback)
+                logger.warning(f"Unable to read Secondary LLM sheet: {e}")
+                secondary_meta_map = {}
+        
+            # Convert Python structures to JSON for JS usage
+            table_data_json = json.dumps(table_data)
+            metrics_json = json.dumps(metrics)
+            secondary_meta_json = json.dumps(secondary_meta_map)
+                
+            return f"""
+                <script>
+                let secondaryCurrentPage = 1;
+                let secondaryRowsPerPage = 10;
+                const secondaryTableData = {json.dumps(table_data)};
+                const secondaryMetaMap = {secondary_meta_json};
+                let allSecondaryMetrics = {metrics_json};
+                console.log("allSecondaryMetrics", allSecondaryMetrics)
+                
+                function renderSecondaryTable() {{
+                    const tbody = document.getElementById("secondaryTableBody");
+                    if (!tbody) return;
+                
+                    const start = (secondaryCurrentPage - 1) * secondaryRowsPerPage;
+                    const end = Math.min(start + secondaryRowsPerPage, secondaryTableData.length);
+                
+                    let html = "";
+                
+                    for (let i = start; i < end; i++) {{
+                        const row = secondaryTableData[i];
+                        html += "<tr>";
+                        html += `<td>${{row.query}}</td>`;
+                        html += `<td>${{row.response}}</td>`;
+
+                        allSecondaryMetrics.forEach(metric => {{
+                            const metricSecondaryData = row.metrics[metric];
+                            if (metricSecondaryData.clickable) {{
+                                html += `<td class="text-center">
+                                    <span class="status-cell ${{metricSecondaryData.class}}" 
+                                        onclick="openModal(${{row.index}}, '${{metric}}')"
+                                        title="Click for details">
+                                        ${{metricSecondaryData.value}}
+                                    </span>
+                                </td>`;
+                            }} else {{
+                                html += `<td class="text-center">
+                                    <span class="status-cell status-skipped">N/A</span>
+                                </td>`;
+                            }}
+
+                            // Secondary column: render label (error_type) + colored button
+                            const metaList = secondaryMetaMap[metric.toLowerCase()] || [];
+                            const meta = metaList.length > 0 ? metaList[0] : null;
+                            const errorType = (meta && meta.error_type) ? String(meta.error_type) : null;
+                            let btnClass = "status-passed";
+                            let btnLabel = (errorType.toLowerCase() !== "none") ? errorType : "No Violation";
+                            if (errorType && errorType.toLowerCase() !== "none") {{
+                                btnClass = "status-failed";
+                            }} else {{
+                                btnClass = "status-passed";
+                            }}
+                            html += `
+                                <td class="text-center">
+                                    <button class="status-cell ${{btnClass}}" onclick="openSecondaryModal(${{i}}, '${{escapeHtml(metric)}}')" style="border:none; padding:8px 10px; border-radius:8px;">
+                                        ${{btnLabel}}
+                                    </button>
+                                </td>`;
+                        }});
+                
+                        html += "</tr>";
+                    }}
+                
+                    tbody.innerHTML = html;
+                    updateSecondaryPaginationInfo();
+                }}
+                
+                function updateSecondaryPaginationInfo() {{
+                    const totalPages = Math.ceil(
+                        secondaryTableData.length / secondaryRowsPerPage
+                    );
+                
+                    document.getElementById("secondaryPageInfo").innerText =
+                        `Page ${{secondaryCurrentPage}} of ${{totalPages}}`;
+                
+                    renderSecondaryPaginationButtons();
+                }}
+
+                function renderSecondaryPaginationButtons() {{
+                    const container = document.getElementById("secondaryPaginationButtons");
+                    if (!container) return;
+                
+                    const totalPages = Math.ceil(
+                        secondaryTableData.length / secondaryRowsPerPage
+                    );
+                
+                    container.innerHTML = `
+                <button class="page-btn"
+                            onclick="secondaryPreviousPage()"
+                            ${{secondaryCurrentPage === 1 ? "disabled" : ""}}>
+                            Prev
+                </button>
+                
+                        <span class="page-btn disabled">
+                            ${{secondaryCurrentPage}} / ${{totalPages}}
+                </span>
+                
+                        <button class="page-btn"
+                            onclick="secondaryNextPage()"
+                            ${{secondaryCurrentPage === totalPages ? "disabled" : ""}}>
+                            Next
+                </button>
+                    `;
+                }}
+                
+                function goToPage(page) {{
+                    const totalPages = Math.ceil(secondaryTableData.length / secondaryRowsPerPage);
+                    if (page >= 1 && page <= totalPages) {{
+                        secondaryCurrentPage = page;
+                        renderSecondaryTable();
+                    }}
+                }}
+
+                function secondaryNextPage() {{
+                    const totalPages = Math.ceil(
+                        secondaryTableData.length / secondaryRowsPerPage
+                    );
+                    if (secondaryCurrentPage < totalPages) {{
+                        secondaryCurrentPage++;
+                        renderSecondaryTable();
+                    }}
+                }}
+                
+                function secondaryPreviousPage() {{
+                    if (secondaryCurrentPage > 1) {{
+                        secondaryCurrentPage--;
+                        renderSecondaryTable();
+                    }}
+                }}
+
+                function secondaryChangeRowsPerPage() {{
+                    const select = document.getElementById("secondaryRowsPerPage");
+                    secondaryRowsPerPage = parseInt(select.value);
+                    secondaryCurrentPage = 1;
+                    renderSecondaryTable();
+                }}
+
+                function openSecondaryModal(rowIndex, metricName) {{
+                    const modal = document.getElementById('detailModal');
+                    if (!modal) return;
+                    // Hide left sections to reuse modal for meta display cleanly
+                    const leftSections = modal.querySelectorAll('.modal-left .modal-section');
+                    leftSections.forEach(s => s.style.display = 'none');
+                    const collapsible = modal.querySelector('.collapsible-section');
+                    if (collapsible) collapsible.style.display = 'none';
+                    const modalRight = modal.querySelector('.modal-right');
+                    if (modalRight) modalRight.style.display = 'none';
+    
+                    document.getElementById('modalTitle').textContent = `${{metricName}} - Secondary LLM Details`;
+                    document.getElementById('modalSubtitle').textContent = '';
+    
+                    const container = document.getElementById('metricSheetFields');
+                    container.innerHTML = '';
+    
+                    const metaList = secondaryMetaMap[metricName.toLowerCase()] || [];
+                    if (metaList.length === 0) {{
+                        const section = document.createElement('div');
+                        section.className = 'modal-section';
+                        section.innerHTML = '<h4>No metadata</h4><p>N/A</p>';
+                        container.appendChild(section);
+                    }} else {{
+                        metaList.forEach((meta, idx) => {{
+                            const keys = Object.keys(meta || {{}}).filter(k => k && k.toLowerCase() !== 'eval_name' && k.toLowerCase() !== 'trace_id');
+                            if (keys.length === 0) {{
+                                const section = document.createElement('div');
+                                section.className = 'modal-section';
+                                section.innerHTML = `<h4>Row ${{idx+1}}</h4><p>N/A</p>`;
+                                container.appendChild(section);
+                            }} else {{
+                                keys.forEach(k => {{
+                                    let v = meta[k];
+                                    const section = document.createElement('div');
+                                    section.className = 'modal-section';
+                                    const heading = document.createElement('h4');
+                                    heading.textContent = String(k).replace(/_/g, ' ');
+                                    section.appendChild(heading);
+                                    const content = document.createElement('div');
+                                    if (v === null || v === undefined) {{
+                                        content.innerHTML = '<p>N/A</p>';
+                                    }} else if (typeof v === 'object') {{
+                                        content.innerHTML = `<pre>${{escapeHtml(JSON.stringify(v, null, 2))}}</pre>`;
+                                    }} else {{
+                                        content.innerHTML = `<p>${{escapeHtml(String(v))}}</p>`;
+                                    }}
+                                    section.appendChild(content);
+                                    container.appendChild(section);
+                                }});
+                            }}
+                        }});
+                    }}
+    
+                    modal.style.display = 'block';
+                }}
+    
+                // helper escape (duplicate from main script to keep safe)
+                function escapeHtml(str) {{
+                    if (str === null || str === undefined) return '';
+                    return String(str)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }}
+                
+                document.addEventListener("DOMContentLoaded", renderSecondaryTable);
+                </script>
+                """
+        except Exception as e:
+            logger.error(f"Error generating secondary llm javascript: {e}")
+            return f"<script>console.error('Error generating secondary llm javascript: {e}');</script>"
+ 
     
     # ==================== HTML GENERATION ====================
     
@@ -1794,6 +2752,9 @@ class ReportGenerator:
             <button class="tab-button" onclick="showTab('details', event)">
                 🔍 Detailed Results
             </button>
+            <button class="tab-button" onclick="showTab('secondary_llm', event)">
+                🤖 Secondary LLM
+            </button>
         </nav>
         
         <main>
@@ -1821,7 +2782,9 @@ class ReportGenerator:
                             <h3>📊 Metrics Performance Comparison</h3>
                         </div>
                         <div class="card-content">
-                            {charts.get('comparison', '<div>No comparison chart data available</div>')}
+                            <div style="overflow-x:auto; width:100%;">
+                                {charts.get('comparison', '<div>No comparison chart data available</div>')}
+                        </div>
                         </div>
                     </div>
                     
@@ -1830,7 +2793,49 @@ class ReportGenerator:
                             <h3>📋 Metrics Overview by Status</h3>
                         </div>
                         <div class="card-content">
-                            {charts.get('metrics', '<div>No metrics chart data available</div>')}
+                            <div style="overflow-x:auto; width:100%;">
+                                {charts.get('metrics', '<div>No metrics chart data available</div>')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card full-width">
+                        <div class="card-header">
+                            <h3>📦 Data Coverage</h3>
+                        </div>
+                        <div class="card-content">
+                                {charts.get('coverage', '<div>No coverage data available</div>')}
+                        </div>
+                    </div>
+                            
+                    <div class="chart-card full-width">
+                        <div class="card-header">
+                            <h3>🔁 Run Comparison</h3>
+                        </div>
+                        <div class="card-content">
+                            <input type="file" id="prevRun">
+                            <input type="file" id="currRun">
+                            <br><br>
+                            <button onclick="uploadRuns()">Compare Runs</button>
+                            
+                            <div id="runComparisonResult" style="margin-top:20px;">
+                                <i>Upload files to compare runs</i>
+                            </div>
+                        </div>
+                    </div>
+                            
+                    <div class="chart-card full-width">
+                        <div class="card-header">
+                            <h3>📊 Aggregated Metrics</h3>
+                        </div>
+                        <div class="card-content">
+                            {charts.get('aggregated', '<div>No aggregated data available</div>')}
+                        </div>
+                    </div>
+                            
+                    <div class="chart-card full-width">
+                        <div class="card-content">
+                                {charts.get('disaggregated', '<div>No disaggregated data available</div>')}
                         </div>
                     </div>
                 </div>
@@ -1839,6 +2844,11 @@ class ReportGenerator:
             <div id="details" class="tab-content">
                     <div class="card-content p-0">
                         {self._generate_interactive_details_table(details_df, all_metrics)}
+                </div>
+            </div>
+            <div id="secondary_llm" class="tab-content">
+                <div class="card-content">
+                    {self._generate_secondary_llm_table(details_df,all_metrics)}
                 </div>
             </div>
         </main>
@@ -1911,89 +2921,316 @@ class ReportGenerator:
             }}
         }}
         
+        // Updated openModal + helpers: renders column headings once and shows values under each heading.
+        // Replace your existing openModal with this function.
+        
+        // Add these helpers and the updated openModal in the JS file where openModal is defined
+ 
+        function escapeHtml(str) {{
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }}
+        
+        function renderArrayOfObjectsAsColumns(arr) {{
+        if (!Array.isArray(arr) || arr.length === 0) return '<div class="modal-section"><p>N/A</p></div>';
+        
+        const keySet = new Set();
+        arr.forEach(row => {{
+            if (row && typeof row === 'object' && !Array.isArray(row)) {{
+            Object.keys(row).forEach(k => keySet.add(k));
+            }}
+        }});
+        const keys = Array.from(keySet);
+        if (keys.length === 0) {{
+            const vals = arr.filter(v => v !== null && v !== undefined && v !== '').map(v => escapeHtml(String(v)));
+            return `<div class="modal-section"><p>${{vals.join('<br/>') || 'N/A'}}</p></div>`;
+        }}
+        
+        let html = `<div class="modal-grid">`;
+        keys.forEach(key => {{
+            const prettyKey = key.replace(/_/g, ' ');
+            const values = arr.map(row => {{
+            if (!row || !(key in row)) return null;
+            const v = row[key];
+            if (v === null || v === undefined || v === '' || String(v).toLowerCase() === 'nan' || String(v) === 'N/A') return null;
+            if (typeof v === 'object') return `<pre>${{escapeHtml(JSON.stringify(v, null, 2))}}</pre>`;
+            return escapeHtml(String(v));
+            }}).filter(Boolean);
+        
+            html += `<div class="modal-section"><h4>${{escapeHtml(prettyKey)}}</h4>`;
+            html += (values.length === 0) ? `<p>N/A</p>` : `<p>${{values.join('<br/>')}}</p>`;
+            html += `</div>`;
+        }});
+        html += `</div>`;
+        return html;
+        }}
+        
+        function renderObjectAsColumns(obj) {{
+        if (!obj || typeof obj !== 'object') return `<div class="modal-section"><p>N/A</p></div>`;
+        const entries = Object.entries(obj);
+        if (entries.length === 0) return `<div class="modal-section"><p>N/A</p></div>`;
+        
+        let html = `<div class="modal-grid">`;
+        entries.forEach(([k, v]) => {{
+            const prettyKey = k.replace(/_/g, ' ');
+            html += `<div class="modal-section"><h4>${{escapeHtml(prettyKey)}}</h4>`;
+            if (v === null || v === undefined || v === '' || String(v).toLowerCase() === 'nan' || String(v) === 'N/A') {{
+            html += `<p>N/A</p>`;
+            }} else if (typeof v === 'object') {{
+            if (Array.isArray(v)) {{
+                const vals = v.map(x => (x === null || x === undefined) ? null : (typeof x === 'object' ? `<pre>${{escapeHtml(JSON.stringify(x, null, 2))}}</pre>` : escapeHtml(String(x)))).filter(Boolean);
+                html += `<p>${{vals.join('<br/>') || 'N/A'}}</p>`;
+            }} else {{
+                html += `<pre>${{escapeHtml(JSON.stringify(v, null, 2))}}</pre>`;
+            }}
+            }} else {{
+            html += `<p>${{escapeHtml(String(v))}}</p>`;
+            }}
+            html += `</div>`;
+        }});
+        html += `</div>`;
+        return html;
+        }}
+        
+        function renderMetricFieldsAsHeadings(objOrArray) {{
+            if (objOrArray === null || objOrArray === undefined) return `<div class="modal-section"><p>N/A</p></div>`;
+            if (Array.isArray(objOrArray)) {{
+                if (objOrArray.length > 0 && objOrArray.every(item => typeof item === 'object' && !Array.isArray(item))) {{
+                return renderArrayOfObjectsAsColumns(objOrArray);
+                }}
+                const vals = objOrArray.map(v => (v === null || v === undefined) ? null : (typeof v === 'object' ? `<pre>${{escapeHtml(JSON.stringify(v, null, 2))}}</pre>` : escapeHtml(String(v)))).filter(Boolean);
+                return `<div class="modal-section"><p>${{vals.join('<br/>') || 'N/A'}}</p></div>`;
+            }}
+            if (typeof objOrArray === 'object') {{
+                return renderObjectAsColumns(objOrArray);
+            }}
+            return `<div class="modal-section"><p>${{escapeHtml(String(objOrArray))}}</p></div>`;
+        }}
+        
         function openModal(rowIndex, metricName) {{
+            document.querySelector(".modal-left .modal-section").style.display = "block";
+            document.querySelector(".collapsible-section").style.display = "block";
+            document.querySelector(".modal-right").style.display = "block";
             const modal = document.getElementById('detailModal');
             if (!modal || !modalData[rowIndex]) {{
                 console.error('Modal or data not found');
                 return;
             }}
-            
+        
             const data = modalData[rowIndex];
             const metricData = data.metrics[metricName] || {{}};
-            
+            const metricSheetData = data.metric_fields?.[metricName] || {{}}; // object or array
+        
             // Reset modal scroll positions
             const modalLeft = modal.querySelector('.modal-left');
             const modalRight = modal.querySelector('.modal-right');
             if (modalLeft) modalLeft.scrollTop = 0;
             if (modalRight) modalRight.scrollTop = 0;
-            
-            // Reset collapsible sections
-            ['response', 'context', 'metadata', 'projectContext'].forEach(sectionId => {{
-                const content = document.getElementById(sectionId + 'Content');
-                const icon = document.getElementById(sectionId + 'Icon');
-                if (content && icon) {{
-                    content.classList.add('collapsed');
-                    icon.classList.remove('expanded');
-                    icon.textContent = '▼';
-                }}
-            }});
-            
-            // Update modal content
-            const updateElement = (id, content) => {{
-                const element = document.getElementById(id);
-                if (element) {{
-                    element.textContent = content || 'N/A';
-                }}
+        
+            // Reset response collapsible to collapsed state for a clean start
+            const responseContent = document.getElementById('responseContent');
+            const responseIcon = document.getElementById('responseIcon');
+            if (responseContent && responseIcon) {{
+                responseContent.classList.add('collapsed');
+                responseIcon.classList.remove('expanded');
+                responseIcon.textContent = '▼';
+            }}
+        
+            // Helper to set text
+            const updateElementText = (id, content) => {{
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = content || 'N/A';
             }};
+        
+            updateElementText('modalTitle', `${{metricName.replace(/_/g, ' ').toUpperCase()}} Details`);
+            updateElementText('modalSubtitle', `Threshold: ${{metricData.threshold || 'N/A'}}`);
+            updateElementText('modalQuestion', data.query);
+            updateElementText('modalResponse', data.response);
+        
+            const metricFieldsContainer = document.getElementById('metricSheetFields');
+            if (metricFieldsContainer) {{
+                metricFieldsContainer.innerHTML = '';
             
-            updateElement('modalTitle', `${{metricName.replace(/_/g, ' ').toUpperCase()}} Details`);
-            updateElement('modalSubtitle', `Threshold: ${{metricData.threshold || 'N/A'}}`);
-            updateElement('modalQuestion', data.question);
-            updateElement('modalResponse', data.response);
-            updateElement('modalContext', data.context);
-            updateElement('modalCitations', data.citations);
-            updateElement('modalMetadata', data.meta_data);
-            updateElement('modalProjectContext', data.project_context);
-            updateElement('modalConfiguration', data.selected_pills);
-            updateElement('modalGroundTruth', data.ground_truth_response);
-            updateElement('modalReason', metricData.additional_fields?.reason || 'No reason provided');
+                // Normalize rows
+                let rows = [];
+                if (Array.isArray(metricSheetData)) {{
+                    rows = metricSheetData;
+                }} else if (metricSheetData && typeof metricSheetData === 'object') {{
+                    rows = [metricSheetData];
+                }}
             
-            // Handle additional metric fields
+                if (rows.length === 0) {{
+                    metricFieldsContainer.innerHTML = '<p>N/A</p>';
+                    return;
+                }}
+            
+                /* ======================================================
+                CASE 1: MULTIPLE RECORDS → TABLE
+                ====================================================== */
+                if (rows.length > 1) {{
+                    const excludeKeys = new Set([
+                    'query', 'response', 'score', 'reason', 'overall reason', 'overall_reason','reasoning',
+                    'overall score', 'overall_score', 'eval_name', 'trace_id', 'span_id', 'timestamp', 'traceback'
+                    ]);
+            
+                    const headers = Object.keys(rows[0]).filter(
+                        k => !excludeKeys.has(k.toLowerCase())
+                    );
+            
+                    if (headers.length === 0) {{
+                        metricFieldsContainer.innerHTML = '<p>N/A</p>';
+                        return;
+                    }}
+            
+                    const table = document.createElement('table');
+                    table.className = 'metric-table';
+            
+                    // THEAD
+                    const thead = document.createElement('thead');
+                    const trHead = document.createElement('tr');
+                    headers.forEach(h => {{
+                        const th = document.createElement('th');
+                        th.textContent = h.replace(/_/g, ' ');
+                        trHead.appendChild(th);
+                    }});
+                    thead.appendChild(trHead);
+                    table.appendChild(thead);
+            
+                    // TBODY
+                    const tbody = document.createElement('tbody');
+                    rows.forEach(row => {{
+                        const tr = document.createElement('tr');
+                        headers.forEach(h => {{
+                            const td = document.createElement('td');
+                            const val = row[h];
+                            td.textContent =
+                                val === null || val === undefined || String(val).toLowerCase() === 'nan'
+                                    ? 'N/A'
+                                    : val;
+                            tr.appendChild(td);
+                        }});
+                        tbody.appendChild(tr);
+                    }});
+            
+                    table.appendChild(tbody);
+                    metricFieldsContainer.appendChild(table);
+                }}
+            
+                /* ======================================================
+                CASE 2: SINGLE RECORD → PRESERVE OLD LAYOUT
+                ====================================================== */
+                else {{
+                    const record = rows[0];
+                    const excludeKeys = new Set([
+                    'query', 'response', 'score', 'reason', 'overall reason', 'overall_reason','reasoning',
+                    'overall score', 'overall_score', 'eval_name', 'trace_id', 'span_id', 'timestamp', 'traceback'
+                    ]);
+            
+                    Object.entries(record).forEach(([key, value]) => {{
+                        if (excludeKeys.has(key.toLowerCase())) return;
+                        if (
+                            value === null ||
+                            value === undefined ||
+                            String(value).trim() === '' ||
+                            String(value).toLowerCase() === 'nan'
+                        ) return;
+            
+                        const section = document.createElement('div');
+                        section.className = 'modal-section';
+            
+                        const heading = document.createElement('h4');
+                        heading.textContent = key.replace(/_/g, ' ');
+                        section.appendChild(heading);
+            
+                        const content = document.createElement('div');
+                        content.textContent = value;
+                        section.appendChild(content);
+            
+                        metricFieldsContainer.appendChild(section);
+                    }});
+            
+                    if (!metricFieldsContainer.hasChildNodes()) {{
+                        metricFieldsContainer.innerHTML = '<p></p>';
+                    }}
+                }}
+            }}
+
+            // Update reason and additionalMetricFields
+            updateElementText('modalReason', metricData.additional_fields?.reason || 'No reason provided');
+        
             const additionalFieldsDiv = document.getElementById('additionalMetricFields');
             if (additionalFieldsDiv && metricData.additional_fields) {{
                 additionalFieldsDiv.innerHTML = '';
                 const processedFields = new Set(['reason', 'status']);
-                
                 Object.keys(metricData.additional_fields).forEach(fieldName => {{
                     if (!processedFields.has(fieldName)) {{
                         const fieldValue = metricData.additional_fields[fieldName];
-                        if (fieldValue && fieldValue !== 'nan' && fieldValue !== 'N/A') {{
+                        if (fieldValue && String(fieldValue).toLowerCase() !== 'nan' && String(fieldValue) !== 'N/A') {{
                             const fieldDiv = document.createElement('div');
                             fieldDiv.className = 'modal-section';
-                            fieldDiv.innerHTML = `
-                                <h4>${{fieldName.charAt(0).toUpperCase() + fieldName.slice(1).replace(/_/g, ' ')}}</h4>
-                                <p>${{fieldValue}}</p>
-                            `;
+                            const title = escapeHtml(fieldName.charAt(0).toUpperCase() + fieldName.slice(1).replace(/_/g, ' '));
+                            if (typeof fieldValue === 'object') {{
+                                fieldDiv.innerHTML = `<h4>${{title}}</h4><pre>${{escapeHtml(JSON.stringify(fieldValue, null, 2))}}</pre>`;
+                            }} else {{
+                                fieldDiv.innerHTML = `<h4>${{title}}</h4><p>${{escapeHtml(String(fieldValue))}}</p>`;
+                            }}
                             additionalFieldsDiv.appendChild(fieldDiv);
                         }}
                     }}
                 }});
             }}
-            
-            // Create score visualization
+        
+            // Score visualization
             const scoreElement = document.getElementById('scorePieChart');
             if (scoreElement && metricData.score && metricData.threshold) {{
                 createScorePieChart(
-                    parseFloat(metricData.score), 
-                    parseFloat(metricData.threshold), 
+                    parseFloat(metricData.score),
+                    parseFloat(metricData.threshold),
                     metricName
                 );
             }}
-            
-            // Show modal
+        
             modal.style.display = 'block';
         }}
+
+        function openRcaModal(rowIndex) {{
+            const modal = document.getElementById("detailModal");
+            const rca = allTableData[rowIndex].rca;
+            if (!modal || !rca) return;
         
+            document.getElementById("modalTitle").textContent = "RCA Details";
+            document.getElementById("modalSubtitle").textContent = "";
+        
+            document.querySelector(".modal-left .modal-section").style.display = "none"; 
+            document.querySelector(".collapsible-section").style.display = "none";       
+            document.querySelector(".modal-right").style.display = "none";               
+        
+            const container = document.getElementById("metricSheetFields");
+            container.innerHTML = "";
+        
+           Object.entries(rca.details).forEach(([key, value]) => {{
+                if (value === null || value === undefined) return;
+            
+                const section = document.createElement("div");
+                section.className = "modal-section";
+            
+                section.innerHTML = `
+            <h4>${{key.replace(/_/g, " ")}}</h4>
+            <p>${{value}}</p>
+                `;
+            
+                container.appendChild(section);
+            }});
+        
+            modal.style.display = "block";
+        }}
+
         function createScorePieChart(score, threshold, metric) {{
             if (isNaN(score) || isNaN(threshold)) return;
             
@@ -2062,6 +3299,206 @@ class ReportGenerator:
             console.log('Report loaded successfully');
             // Initialize any additional functionality here
         }});
+    </script>
+    <script>
+    function uploadRuns() {{
+        const prevFile = document.getElementById("prevRun").files[0];
+        const currFile = document.getElementById("currRun").files[0];
+    
+        if (!prevFile || !currFile) {{
+            alert("Please upload both files");
+            return;
+        }}
+    
+        const formData = new FormData();
+        formData.append("previous_run", prevFile);
+        formData.append("current_run", currFile);
+    
+        fetch("/compare-runs", {{
+            method: "POST",
+            body: formData
+        }})
+        .then(res => res.text())
+        .then(html => {{
+            const container = document.getElementById("runComparisonResult");
+            if (!container) return;
+    
+            // Insert the returned HTML
+            container.innerHTML = html;
+    
+            // Execute any <script> tags in the returned HTML (browser doesn't run scripts from innerHTML)
+            // This creates new script elements so the code runs.
+            const scripts = Array.from(container.querySelectorAll("script"));
+            scripts.forEach(oldScript => {{
+                const newScript = document.createElement("script");
+                if (oldScript.src) {{
+                    // external script
+                    newScript.src = oldScript.src;
+                    // ensure scripts execute in order synchronously
+                    newScript.async = false;
+                }} else {{
+                    // inline script
+                    newScript.textContent = oldScript.innerHTML;
+                }}
+                // Append to body to execute, then remove to keep DOM clean
+                document.body.appendChild(newScript);
+                document.body.removeChild(newScript);
+            }});
+        }})
+        .catch(() => {{
+            document.getElementById("runComparisonResult").innerHTML =
+                "<b>Error comparing runs</b>";
+        }});
+    }}
+    </script>
+    <script>
+    let selectedSubs = [];
+    
+    window.onload = function () {{
+        const topicSelect = document.getElementById("topicSelect");
+        const dropdown = document.getElementById("subTopicDropdown");
+    
+        topicSelect.innerHTML = "<option value=''>Select Topic</option>";
+    
+        [...new Set(DISAGG_DATA.map(d => d.topic))].forEach(t => {{
+            topicSelect.innerHTML += `<option value="${{t}}">${{t}}</option>`;
+        }});
+    
+        topicSelect.onchange = () => {{
+            selectedSubs = [];
+            renderChips();
+            dropdown.innerHTML = "";
+    
+            const topic = topicSelect.value;
+            if (!topic) return;
+    
+            [...new Set(
+                DISAGG_DATA.filter(d => d.topic === topic)
+                        .map(d => d.sub_topic)
+            )].forEach(st => {{
+                const div = document.createElement("div");
+                div.textContent = st;
+                div.onclick = () => addSubTopic(st);
+                dropdown.appendChild(div);
+            }});
+        }};
+    
+        document.getElementById("subTopicInput").onclick = () => {{
+            dropdown.style.display = "block";
+        }};
+    
+        document.addEventListener("click", e => {{
+            if (!e.target.closest(".multi-select")) {{
+                dropdown.style.display = "none";
+            }}
+        }});
+    }};
+    
+    function addSubTopic(sub) {{
+        if (!selectedSubs.includes(sub)) {{
+            selectedSubs.push(sub);
+            renderChips();
+        }}
+    }}
+    
+    function removeSub(sub) {{
+        selectedSubs = selectedSubs.filter(s => s !== sub);
+        renderChips();
+    }}
+    
+    function renderChips() {{
+        const chipBox = document.getElementById("selectedSubTopics");
+        chipBox.innerHTML = "";
+    
+        selectedSubs.forEach(sub => {{
+            const chip = document.createElement("div");
+            chip.className = "chip";
+            chip.innerHTML = `${{sub}} <span onclick="removeSub('${{sub}}')">×</span>`;
+            chipBox.appendChild(chip);
+        }});
+    
+        updateChart();
+    }}
+    
+    function updateChart() {{
+        const topic = document.getElementById("topicSelect").value;
+        if (!topic || selectedSubs.length === 0) return;
+    
+        const rows = DISAGG_DATA.filter(
+            d => d.topic === topic && selectedSubs.includes(d.sub_topic)
+        );
+    
+        const metrics = {{}};
+    
+        rows.forEach(r => {{
+            Object.entries(r.metrics).forEach(([m, v]) => {{
+                if (!metrics[m]) {{
+                    metrics[m] = {{ total:0, passed:0, failed:0, scoreSum:0, scoreCount: 0 }};
+                }}
+                metrics[m].total += v.total;
+                metrics[m].passed += v.passed;
+                metrics[m].failed += v.failed;
+                if(v.aggregate_score !== null && v.aggregate_score !== undefined) {{
+                    metrics[m].scoreSum += v.aggregate_score;
+                    metrics[m].scoreCount += 1;
+                }}
+            }});
+        }});
+    
+        const labels = Object.keys(metrics);
+        const maxCount = Math.max(
+            ...labels.map(m =>
+                Math.max(
+                    metrics[m].total,
+                    metrics[m].passed,
+                    metrics[m].failed
+                )
+            )
+        )
+    
+        Plotly.newPlot("disaggChart", [
+            {{
+                x: labels,
+                y: labels.map(m => metrics[m].total),
+                name: "Total",
+                type: "bar",
+                marker: {{ color: "#1f77b4" }} 
+            }},
+            {{
+                x: labels,
+                y: labels.map(m => metrics[m].passed),
+                name: "Passed",
+                type: "bar",
+                marker: {{ color: "#2ca02c" }}
+            }},
+            {{
+                x: labels,
+                y: labels.map(m => metrics[m].failed),
+                name: "Failed",
+                type: "bar",
+                marker: {{ color: "#d62728" }}
+            }}
+        ], {{
+            barmode: "group",
+            title: `${{topic}} → ${{selectedSubs.join(", ")}}`,
+            yaxis: {{ title: "Count",
+                      range: [0, maxCount],
+                      tickmode: "linear",
+                      dtick: 1,
+                      showgrid: true,
+                      zeroline: true
+                    }},
+            yaxis2: {{
+                title: "Aggregated Score",
+                overlaying: "y",
+                side: "right",
+                range: [0,1],
+                tickmode: "linear",
+                dtick: 1 / maxCount,
+                showgrid: false
+            }}
+        }});
+    }}
     </script>
 </body>
 </html>"""
@@ -2163,7 +3600,7 @@ class ReportGenerator:
     <div class="suggestion">
         Please check that your data contains the required columns:<br>
         • Metrics DataFrame: 'Metrics'/'Metric', 'Threshold'/'Threshold_Value', 'Score'/'aggregate_score'<br>
-        • Details DataFrame: 'question', 'response', metric score columns<br>
+        • Details DataFrame: 'query', 'response', metric score columns<br>
         • Summary DataFrame: metrics pass/fail counts<br>
         • Overall DataFrame: overall pass/fail counts
     </div>
@@ -2177,7 +3614,7 @@ def demo_report_generation():
     import pandas as pd
     
     try:
-        input_file_path = '/content/Metrics_template.xlsx'
+        input_file_path = 'Metrics_template.xlsx'
         metrics_df= pd.read_excel(input_file_path, sheet_name='Metrics Interpretability')
         details_df= pd.read_excel(input_file_path, sheet_name='Test Data')
         summary_df= pd.read_excel(input_file_path, sheet_name='Metrics_wise Pass-Fail')
@@ -2191,10 +3628,12 @@ def demo_report_generation():
         
         # Save the demo report
         try:
-          file_path = "/content/report.html"
-          with open(file_path, "w") as f:
-              f.write(html_content)
-          print(f"HTML content saved to {file_path}")
+            file_path = "report.html"
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            
+            print("HTML length:", len(html_content))
+            print("Report saved at:", Path(file_path).resolve())
         except Exception as e:
           logger.info(f"Exception in line {sys.exc_info()[-1].tb_lineno}: {e}")
         
@@ -2207,12 +3646,38 @@ def demo_report_generation():
         print("• Mobile-friendly responsive layout")
         print("• Professional color scheme and typography")
         
-        return "Report generated successfully"
+        return html_content
         
     except Exception as e:
         print(f"❌ Error generating demo report: {e}")
         return None
 
+app = Flask(__name__)
+
+@app.route("/")
+def demo_report():
+    return demo_report_generation()
+ 
+@app.route("/compare-runs", methods=["POST"])
+def compare_runs():
+    try:
+        prev_file = request.files.get("previous_run")
+        curr_file = request.files.get("current_run")
+ 
+        if not prev_file or not curr_file:
+            return "<div class='text-center'><b>Upload both files</b></div>"
+ 
+        prev_df = pd.read_excel(prev_file)
+        curr_df = pd.read_excel(curr_file)
+ 
+        generator = ReportGenerator()
+        theme = generator.config["theme"]
+ 
+        return generator._create_run_comparison_chart(prev_df, curr_df, theme)
+ 
+    except Exception as e:
+        return f"<div class='text-center'><b>Error: {e}</b></div>"
 
 if __name__ == "__main__":
-    demo_report_generation()
+    # demo_report_generation()
+    app.run(debug=True)
