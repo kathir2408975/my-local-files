@@ -281,5 +281,11 @@ if __name__ == '__main__':
 
 
 
+    019c64ff-cdb5-7ad1-b5cc-83ee7236cc6b	I want to ship 5 boxes of Fresh Apples from BOSTON to Phoenix. Each about 30kgs and height, length and width is of 100cm. It's a type of food. Ship it by 2026-10-01 
+019c6a10-6f73-7d30-9f33-eaf6e6c9c4bc	Please arrange the transportation of 8 boxes of Japanese Vase from BOSTON to Seattle. Each box weighs 15 kg and measures 120 cm in height, length, and width. The items are fragile and must be delivered by 2027-03-10.
+
+
+
+
 
 
