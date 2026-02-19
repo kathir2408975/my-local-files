@@ -14,6 +14,8 @@ import os
 import pandas as pd
 import plotly.express as px
 import plotly.offline as plot
+import re
+import unicodedata
 
 try:
     from loguru import logger
@@ -77,11 +79,47 @@ class ReportGenerator:
         try:
             df = pd.read_excel(self.metric_details_excel_path, sheet_name="RCA")
             df["Query"] = df["Query"].astype(str).str.strip()
-            df["violation_type"] = df["violation_type"].astype(str)
+            df["Looping_agent"] = df["Looping_agent"].astype(str)
             return df
         except Exception as e:
             logger.error(f"Error loading RCA sheet: {e}")
             return pd.DataFrame()
+ 
+    def _normalize_query_match(self, text: str) -> str:
+        if not text:
+            return ""
+    
+        text = str(text)
+    
+        # unify unicode quotes etc
+        text = unicodedata.normalize("NFKD", text)
+    
+        # lowercase
+        text = text.lower()
+    
+        # remove punctuation
+        text = re.sub(r"[^\w\s]", "", text)
+    
+        # collapse spaces
+        text = re.sub(r"\s+", " ", text).strip()
+    
+        return text
+
+    def _normalize_text(self, text: Any) -> str:
+        """Universal text normalization for comparisons."""
+        if text is None:
+            return ""
+        text = str(text)
+        text = unicodedata.normalize("NFKD", text)
+        text = text.lower()
+        text = re.sub(r"[^\w\s]", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+ 
+ 
+    def _text_equal(self, a: Any, b: Any) -> bool:
+        """Compare two text fields ignoring case, punctuation, spacing."""
+        return self._normalize_text(a) == self._normalize_text(b)
 
     # ==================== UTILITY METHODS ====================
     
@@ -252,15 +290,10 @@ class ReportGenerator:
             metrics_col = self._find_column(summary_df, ['Metrics', 'Metric'])
             passed_col = self._find_column(summary_df, ["Passed"])
             failed_col = self._find_column(summary_df, ["Failed"])
-            skipped_col = self._find_column(summary_df, ["Skipped"])
     
             metrics = summary_df[metrics_col].astype(str).tolist()
             failed = summary_df[failed_col].fillna(0).tolist()
-            passed = summary_df[passed_col].fillna(0).tolist()
-            skipped = (
-                summary_df[skipped_col].fillna(0).tolist()
-                if skipped_col else [0] * len(metrics)
-            )    
+            passed = summary_df[passed_col].fillna(0).tolist()  
             fig = go.Figure()
     
             fig.add_bar(
@@ -274,12 +307,6 @@ class ReportGenerator:
                 y=passed, 
                 name='Passed', 
                 marker_color=self.config['status_colors']['Passed']
-            )
-            fig.add_bar(
-                x=metrics, 
-                y=skipped, 
-                name='Skipped', 
-                marker_color=self.config['status_colors']['Skipped']
             )
     
             fig.update_layout(
@@ -311,9 +338,7 @@ class ReportGenerator:
             # Force numeric extraction
             passed = int(overall_df[[c for c in overall_df.columns if 'passed' in c.lower()][0]].sum())
             failed = int(overall_df[[c for c in overall_df.columns if 'failed' in c.lower()][0]].sum())
-            skipped = int(overall_df[[c for c in overall_df.columns if 'skipped' in c.lower()][0]].sum()) if \
-                    any('skipped' in c.lower() for c in overall_df.columns) else 0
-    
+                
             labels = []
             values = []
             colors = []
@@ -327,11 +352,6 @@ class ReportGenerator:
                 labels.append(f"Failed ({failed})")
                 values.append(failed)
                 colors.append(self.config['status_colors']['failed'])
-    
-            if skipped > 0:
-                labels.append(f"Skipped ({skipped})")
-                values.append(skipped)
-                colors.append(self.config['status_colors']['skipped'])
     
             total = sum(values)
     
@@ -446,8 +466,9 @@ class ReportGenerator:
             # ===============================
             df = pd.read_excel(excel_path, sheet_name=sheet_name)
     
-            df["topic"] = df["topic"].astype(str).str.strip().str.title()
+            df["topic"] = df["topic"].astype(str).str.strip().str.title().str.upper()
             df["sub_topic"] = df["sub_topic"].astype(str).str.strip().str.title()
+            df["query"] = df["query"].astype(str)
     
             overall_count = len(df)
     
@@ -476,6 +497,21 @@ class ReportGenerator:
             subtopic_df = subtopic_df.merge(
                 topic_df, on="topic", how="left"
             )
+
+            # ===============================
+            # ATTACH QUERIES PER SUB-TOPIC
+            # ===============================
+            query_map = (
+                df.groupby(["topic", "sub_topic"])["query"]
+                .apply(lambda x: "<br>".join(x.astype(str)))
+                .reset_index(name="queries")
+            )
+            
+            subtopic_df = subtopic_df.merge(
+                query_map,
+                on=["topic", "sub_topic"],
+                how="left"
+            )
     
             subtopic_df["subtopic_percentage"] = (
                 subtopic_df["subtopic_count"] /
@@ -492,9 +528,10 @@ class ReportGenerator:
                 color="topic",
                 custom_data=[
                     "topic_percentage",
-                    "subtopic_percentage"
+                    "subtopic_percentage",
+                    "queries"
                 ],
-                title="Test Coverage – Topic & Sub-topic Distribution"
+                title="Test Coverage - Topic & Sub-topic Distribution"
             )
     
             # ===============================
@@ -547,11 +584,55 @@ class ReportGenerator:
                 margin=dict(t=60, l=20, r=20, b=20)
             )
     
-            return plot.plot(
+            chart_div = plot.plot(
                 fig,
                 output_type="div",
                 include_plotlyjs="cdn",
             )
+            
+            click_js = """
+            <script>
+            (function(){
+                var plots = document.querySelectorAll('.plotly-graph-div');
+                var plot = plots[plots.length - 1];
+            
+                if(!plot) return;
+            
+                // create query container if not exists
+                var containerId = "subtopic-query-panel";
+                var container = document.getElementById(containerId);
+            
+                if(!container){
+                    container = document.createElement("div");
+                    container.id = containerId;
+                    container.style.marginTop = "20px";
+                    container.style.padding = "12px";
+                    container.style.border = "1px solid #ddd";
+                    container.style.borderRadius = "6px";
+                    container.style.background = "#fafafa";
+                    plot.parentNode.appendChild(container);
+                }
+            
+                plot.on('plotly_click', function(data){
+                    if(!data || !data.points || !data.points.length) return;
+            
+                    var point = data.points[0];
+            
+                    // sub-topic = has parent
+                    if(point.parent && point.customdata && point.customdata.length >= 3){
+                        var queries = point.customdata[2] || "";
+            
+                        container.innerHTML =
+                            "<h4 style='margin-bottom:8px'>Queries for " + point.label + "</h4>" +
+                            queries;
+            
+                        return false; // stop drilldown
+                    }
+                });
+            })();
+            </script>
+            """
+            return chart_div + click_js
     
         except Exception as e:
             logger.error(f"Error creating test coverage sunburst: {e}")
@@ -639,7 +720,6 @@ class ReportGenerator:
             )
     
             fig.update_layout(
-                title="Aggregated Metrics (Average Score)",
                 xaxis_title="Metrics",
                 yaxis_title="Score",
                 legend=dict(
@@ -845,7 +925,7 @@ class ReportGenerator:
                         if isinstance(metric_df, pd.DataFrame) and idx < len(metric_df):
                             query_col = self._find_column(metric_df, ['Query', 'query', 'Question'])
                             # Normalized query from details dataframe
-                            details_query = str(row.get('Query', '')).strip()
+                            details_query = self._normalize_text(row.get('Query', ''))
                             found_entry = {}
  
                             if query_col and query_col in metric_df.columns:
@@ -854,9 +934,9 @@ class ReportGenerator:
                                 def normalize_q(x):
                                     return str(x).strip().replace('\r\n', '\n').replace('\r', '\n')
  
-                                normalized_target = normalize_q(details_query)
+                                normalized_target = details_query
                                 # mask where normalized values equal
-                                mask = metric_df[query_col].astype(str).apply(normalize_q) == normalized_target
+                                mask = metric_df[query_col].apply(lambda x: self._normalize_text(x) == normalized_target)
                                 matched = metric_df[mask]
  
                                 if not matched.empty:
@@ -870,10 +950,7 @@ class ReportGenerator:
                                         ]
                                 else:
                                     # No exact match — try a looser comparison (strip and collapse whitespace)
-                                    def collapse_ws(s):
-                                        return ' '.join(str(s).split())
-                                    target_ws = collapse_ws(details_query)
-                                    mask2 = metric_df[query_col].astype(str).apply(collapse_ws) == target_ws
+                                    mask2 = metric_df[query_col].apply(lambda x: self._text_equal(x, details_query))
                                     matched2 = metric_df[mask2]
                                     if not matched2.empty:
                                         if len(matched2) == 1:
@@ -913,6 +990,10 @@ class ReportGenerator:
         text = str(text).strip()
         if not text or text.lower() in ['nan', 'none', '']:
             return 'N/A'
+
+        text = text.replace('\\n', '\n')
+
+        text = text.replace('\n', '<br>')
         
         return text
     
@@ -968,6 +1049,7 @@ class ReportGenerator:
 
                        <!-- Metric fields container: each Excel column will be rendered here as its own .modal-section -->
                         <div id="metricSheetFieldsContainer">
+                            <div id="tracebackFields">N/A</div>
                             <div id="metricSheetFields">N/A</div>
                         </div>
                     </div>
@@ -1689,10 +1771,11 @@ class ReportGenerator:
             font-size: 1.2rem;
             transition: transform 0.3s ease;
             color: {theme['primary_color']};
+            transform: rotate(180deg);
         }}
         
         .toggle-icon.expanded {{
-            transform: rotate(180deg);
+            transform: rotate(0deg);
         }}
         
         .score-visualization {{
@@ -1912,7 +1995,7 @@ class ReportGenerator:
                     # Format numeric values
                     if isinstance(value, (int, float)) and not pd.isna(value):
                         if col in [threshold_col, score_col]:
-                            value = f'{value:.3f}'
+                            value = f'{value:.2f}'
                         else:
                             value = f'{value:.2f}' if value != int(value) else str(int(value))
                     
@@ -2109,18 +2192,19 @@ class ReportGenerator:
             table_data = []
 
             rca_df = self._load_rca_data()
-            rca_map = {
-                row["Query"]: row.to_dict()
-                for _, row in rca_df.iterrows()
-            }
+            from collections import defaultdict
+            rca_map = defaultdict(list)
+            for _, row in rca_df.iterrows():
+                key = self._normalize_text(row["Query"])
+                rca_map[key].append(row.to_dict())
             
             for idx, row in df.iterrows():
                 # Prepare query and response
                 question_short = str(row.get('Query', 'N/A'))
                 response_short = str(row.get('Response', 'N/A'))
 
-                question_short = question_short.replace('\n', '<br>')
-                response_short = response_short.replace('\n', '<br>')
+                question_short = question_short.replace('\\n', '<br>').replace('\n', '<br>')
+                response_short = response_short.replace('\\n', '<br>').replace('\n', '<br>')
                 
                 # Prepare metric data
                 metric_cells = {}
@@ -2131,7 +2215,7 @@ class ReportGenerator:
                     
                     # Format score
                     if pd.notna(score) and isinstance(score, (int, float)):
-                        formatted_score = f'{score:.3f}'
+                        formatted_score = f'{score:.2f}'
                     else:
                         formatted_score = str(score) if score != 'N/A' else 'N/A'
                     
@@ -2151,12 +2235,14 @@ class ReportGenerator:
                         'clickable': formatted_score != 'N/A'
                     }
                 
-                rca_row = rca_map.get(
-                    question_short.replace("<br>", "\n").strip(),
-                    {}
-                )
-            
-                violation = str(rca_row.get("violation_type", "")).lower()
+                lookup_key = self._normalize_text(question_short)
+                rca_rows = rca_map.get(lookup_key, [])
+                has_rca_match = len(rca_rows) > 0
+
+                failure_category = ""
+                
+                if has_rca_match:
+                    failure_category =  str(rca_rows[0].get("Failure Category", "")).strip().lower()
                 
                 table_data.append({
                     'index': int(idx),
@@ -2164,12 +2250,12 @@ class ReportGenerator:
                     'response': response_short,
                     'metrics': metric_cells,
                     'rca': {
-                        "violation_type": violation,
-                        "details": {
-                            k: ("N/A" if pd.isna(v) else v)
-                            for k, v in rca_row.items()
-                            if k.lower() != "violation_type"
-                        }
+                        "has_match": has_rca_match,
+                        "failure_category": failure_category,
+                        "details": [
+                            {k: ("N/A" if pd.isna(v) else v) for k, v in r.items()}
+                            for r in rca_rows
+                        ] if rca_rows else {}
                     }
                 })
             
@@ -2189,6 +2275,15 @@ class ReportGenerator:
                 totalRows = allTableData.length;
                 displayPage();
             }}
+
+            document.addEventListener("DOMContentLoaded", function() {{
+                const content = document.getElementById("responseContent");
+                const icon = document.getElementById("responseIcon");
+            
+                if (content && icon && content.classList.contains("collapsed")) {{
+                    icon.classList.remove("expanded");  // ▲ when closed
+                }}
+            }});
             
             function displayPage() {{
                 const startIdx = (currentPage - 1) * rowsPerPage;
@@ -2209,7 +2304,12 @@ class ReportGenerator:
                     
                     // Metric columns
                     allMetrics.forEach(metric => {{
-                        const metricData = rowData.metrics[metric];
+                        const metricData = rowData.metrics[metric]  || {{
+                                value: "N/A",
+                                status: "Skipped",
+                                class: "status-skipped",
+                                clickable: false
+                        }};
                         if (metricData.clickable) {{
                             html += `<td class="text-center">
                                 <span class="status-cell ${{metricData.class}}" 
@@ -2226,16 +2326,19 @@ class ReportGenerator:
                     }});
 
                     const rca = rowData.rca;
-                    if (rca && rca.violation_type) {{
-                        const isNone = rca.violation_type.toLowerCase() === "none";
+                    if (rca && rca.has_match) {{
+                        const fc = (rca.failure_category || "").toLowerCase();
+                        const isNone = !fc || fc === "none";
+
                         const colorClass = isNone ? "status-passed" : "status-failed";
+                        const label = isNone ? "No Violation" : "Violation";
                     
                         html += `
                     <td class="text-center">
                     <span class="status-cell ${{colorClass}}"
                                 onclick="openRcaModal(${{i}})"
                                 title="Click for RCA">
-                                ${{isNone ? "No Violation" : "Violation"}}
+                                ${{label}}
                     </span>
                     </td>`;
                     }} else {{
@@ -2401,8 +2504,10 @@ class ReportGenerator:
                 question_short = str(row.get('Query', 'N/A'))
                 response_short = str(row.get('Response', 'N/A'))
 
-                question_short = question_short.replace('\n', '<br>')
-                response_short = response_short.replace('\n', '<br>')
+                question_short = question_short.replace('\\n', '<br>').replace('\n', '<br>')
+                response_short = response_short.replace('\\n', '<br>').replace('\n', '<br>')
+
+                query_key = self._normalize_query_match(question_short)
                 
                 # Prepare metric data
                 metric_cells = {}
@@ -2413,7 +2518,7 @@ class ReportGenerator:
                     
                     # Format score
                     if pd.notna(score) and isinstance(score, (int, float)):
-                        formatted_score = f'{score:.3f}'
+                        formatted_score = f'{score:.2f}'
                     else:
                         formatted_score = str(score) if score != 'N/A' else 'N/A'
                     
@@ -2435,6 +2540,7 @@ class ReportGenerator:
 
                 table_data.append({'index': int(idx),
                     'query': question_short,
+                    'query_key': query_key,
                     'response': response_short,
                     'metrics': metric_cells
                 })
@@ -2468,21 +2574,28 @@ class ReportGenerator:
                     sec_df = sec_df.rename(columns=lambda c: str(c).strip())
                     # Build mapping grouped by eval_name (case-insensitive)
                     for _, srow in sec_df.iterrows():
-                        eval_name = str(srow.get("eval_name", "")).strip()
+                        eval_name = str(srow.get("Eval_Name", "")).strip()
+                        query_val = str(srow.get("Query", "")).strip()
+
                         if not eval_name:
                             continue
-                        key = eval_name.strip().lower()
+
+                        metric_key = eval_name.strip().lower()
+                        query_key = self._normalize_query_match(query_val)
+
                         # Build a dict of remaining fields excluding eval_name and trace_id
                         meta = {}
                         for col in sec_df.columns:
-                            if col.lower() in ("eval_name", "trace_id"):
+                            col_clean = str(col).strip().lower()
+                            if col_clean in ("Eval_Name", "trace_id"):
                                 continue
                             # Convert NaN to None for JSON friendliness
                             val = srow.get(col)
                             if pd.isna(val):
                                 val = None
                             meta[col] = val
-                        secondary_meta_map.setdefault(key, []).append(meta)
+
+                        secondary_meta_map.setdefault(metric_key, {}).setdefault(query_key, []).append(meta)
             except Exception as e:
                 # If anything fails, keep secondary_meta_map empty (graceful fallback)
                 logger.warning(f"Unable to read Secondary LLM sheet: {e}")
@@ -2500,7 +2613,6 @@ class ReportGenerator:
                 const secondaryTableData = {json.dumps(table_data)};
                 const secondaryMetaMap = {secondary_meta_json};
                 let allSecondaryMetrics = {metrics_json};
-                console.log("allSecondaryMetrics", allSecondaryMetrics)
                 
                 function renderSecondaryTable() {{
                     const tbody = document.getElementById("secondaryTableBody");
@@ -2518,7 +2630,11 @@ class ReportGenerator:
                         html += `<td>${{row.response}}</td>`;
 
                         allSecondaryMetrics.forEach(metric => {{
-                            const metricSecondaryData = row.metrics[metric];
+                            const metricSecondaryData = row.metrics[metric] || {{
+                                value: "N/A",
+                                class: "status-skipped",
+                                clickable: false
+                            }};
                             if (metricSecondaryData.clickable) {{
                                 html += `<td class="text-center">
                                     <span class="status-cell ${{metricSecondaryData.class}}" 
@@ -2534,13 +2650,15 @@ class ReportGenerator:
                             }}
 
                             // Secondary column: render label (error_type) + colored button
-                            const metaList = secondaryMetaMap[metric.toLowerCase()] || [];
+                            const metricMap = secondaryMetaMap[metric.toLowerCase()] || {{}};
+                            const metaList = metricMap[row.query_key] || [];
                             const meta = metaList.length > 0 ? metaList[0] : null;
-                            const errorType = (meta && meta.error_type) ? String(meta.error_type) : null;
+                            const errorType = (meta && meta.error_type != null && meta.error_type !== "") ? String(meta.error_type) : "none";
                             let btnClass = "status-passed";
-                            let btnLabel = (errorType.toLowerCase() !== "none") ? errorType : "No Violation";
-                            if (errorType && errorType.toLowerCase() !== "none") {{
+                            let btnLabel = "No Violation";
+                            if (errorType.toLowerCase() !== "none") {{
                                 btnClass = "status-failed";
+                                btnLabel = errorType;
                             }} else {{
                                 btnClass = "status-passed";
                             }}
@@ -2630,6 +2748,8 @@ class ReportGenerator:
                 }}
 
                 function openSecondaryModal(rowIndex, metricName) {{
+                    const tb = document.getElementById('tracebackFields');
+                    if (tb) tb.innerHTML = ''
                     const modal = document.getElementById('detailModal');
                     if (!modal) return;
                     // Hide left sections to reuse modal for meta display cleanly
@@ -2645,8 +2765,12 @@ class ReportGenerator:
     
                     const container = document.getElementById('metricSheetFields');
                     container.innerHTML = '';
-    
-                    const metaList = secondaryMetaMap[metricName.toLowerCase()] || [];
+
+                    const row = secondaryTableData[rowIndex];
+                    const qKey = row.query_key;
+
+                    const metricMap = secondaryMetaMap[metricName.toLowerCase()] || {{}}; 
+                    const metaList = metricMap[qKey] || [];
                     if (metaList.length === 0) {{
                         const section = document.createElement('div');
                         section.className = 'modal-section';
@@ -2654,7 +2778,7 @@ class ReportGenerator:
                         container.appendChild(section);
                     }} else {{
                         metaList.forEach((meta, idx) => {{
-                            const keys = Object.keys(meta || {{}}).filter(k => k && k.toLowerCase() !== 'eval_name' && k.toLowerCase() !== 'trace_id');
+                            const keys = Object.keys(meta || {{}}).filter(k => k && k.toLowerCase() !== 'Eval_Name' && k.toLowerCase() !== 'trace_id');
                             if (keys.length === 0) {{
                                 const section = document.createElement('div');
                                 section.className = 'modal-section';
@@ -2672,9 +2796,11 @@ class ReportGenerator:
                                     if (v === null || v === undefined) {{
                                         content.innerHTML = '<p>N/A</p>';
                                     }} else if (typeof v === 'object') {{
-                                        content.innerHTML = `<pre>${{escapeHtml(JSON.stringify(v, null, 2))}}</pre>`;
+                                        const formatted = escapeHtml(JSON.stringify(v, null, 2)).replace(/\\n/g, "<br>");
+                                        content.innerHTML = `<pre>${{formatted}}</pre>`;
                                     }} else {{
-                                        content.innerHTML = `<p>${{escapeHtml(String(v))}}</p>`;
+                                        const formatted = escapeHtml(String(v)).replace(/\\n/g, "<br>");
+                                        content.innerHTML = `<p>${{formatted}}</p>`;
                                     }}
                                     section.appendChild(content);
                                     container.appendChild(section);
@@ -2723,6 +2849,7 @@ class ReportGenerator:
             Complete HTML document string
         """
         try:
+            metrics_count = metrics_df['Metrics'].notna().sum()
             # Build the complete HTML document
             html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2744,7 +2871,7 @@ class ReportGenerator:
         
         <nav class="tab-navigation">
             <button class="tab-button active" onclick="showTab('metrics', event)">
-                📊 Metrics Summary
+                📊 Metrics Summary ({metrics_count})
             </button>
             <button class="tab-button" onclick="showTab('analytics', event)">
                 📈 Analytics Dashboard
@@ -2826,7 +2953,7 @@ class ReportGenerator:
                             
                     <div class="chart-card full-width">
                         <div class="card-header">
-                            <h3>📊 Aggregated Metrics</h3>
+                            <h3>📊 Aggregated Metrics Score</h3>
                         </div>
                         <div class="card-content">
                             {charts.get('aggregated', '<div>No aggregated data available</div>')}
@@ -2842,13 +2969,14 @@ class ReportGenerator:
             </div>
             
             <div id="details" class="tab-content">
-                    <div class="card-content p-0">
-                        {self._generate_interactive_details_table(details_df, all_metrics)}
+                <div class="card-content p-0">
+                    {self._generate_interactive_details_table(details_df, all_metrics)}
                 </div>
             </div>
+            
             <div id="secondary_llm" class="tab-content">
                 <div class="card-content">
-                    {self._generate_secondary_llm_table(details_df,all_metrics)}
+                    {self._generate_secondary_llm_table(details_df, all_metrics)}
                 </div>
             </div>
         </main>
@@ -2904,20 +3032,17 @@ class ReportGenerator:
             }}
         }}
         
-        function toggleCollapsible(sectionId) {{
-            const content = document.getElementById(sectionId + 'Content');
-            const icon = document.getElementById(sectionId + 'Icon');
-            
-            if (content && icon) {{
-                if (content.classList.contains('collapsed')) {{
-                    content.classList.remove('collapsed');
-                    icon.classList.add('expanded');
-                    icon.textContent = '▲';
-                }} else {{
-                    content.classList.add('collapsed');
-                    icon.classList.remove('expanded');
-                    icon.textContent = '▼';
-                }}
+        function toggleCollapsible(section) {{
+            const content = document.getElementById(section + "Content");
+            const icon = document.getElementById(section + "Icon");
+            if (!content || !icon) return;
+            const isCollapsed = content.classList.contains("collapsed");
+            if (isCollapsed) {{
+                content.classList.remove("collapsed");
+                icon.classList.add("expanded");   // ▼
+            }} else {{
+                content.classList.add("collapsed");
+                icon.classList.remove("expanded"); // ▲
             }}
         }}
         
@@ -2927,13 +3052,13 @@ class ReportGenerator:
         // Add these helpers and the updated openModal in the JS file where openModal is defined
  
         function escapeHtml(str) {{
-        if (str === null || str === undefined) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }}
         
         function renderArrayOfObjectsAsColumns(arr) {{
@@ -3045,18 +3170,294 @@ class ReportGenerator:
             const updateElementText = (id, content) => {{
                 const el = document.getElementById(id);
                 if (!el) return;
-                el.textContent = content || 'N/A';
+                if (content === null || content === undefined || content === '') {{
+                    el.innerHTML = 'N/A';
+                    return;
+                }}
+            
+                el.innerHTML = content;
             }};
         
-            updateElementText('modalTitle', `${{metricName.replace(/_/g, ' ').toUpperCase()}} Details`);
+            updateElementText('modalTitle', `${{metricName.replace(/_/g, ' ').toUpperCase()}}`);
             updateElementText('modalSubtitle', `Threshold: ${{metricData.threshold || 'N/A'}}`);
             updateElementText('modalQuestion', data.query);
             updateElementText('modalResponse', data.response);
-        
+ 
+            /* ============================
+            TRACEBACK TABLE (PRIMARY ONLY)
+            ============================ */
+            
+            let uniqueTracebacks = [];
+            const tracebackContainer = document.getElementById('tracebackFields');
+            if (tracebackContainer) tracebackContainer.innerHTML = '';
+            
+            // detect modal type from title
+            const modalTitleText = document.getElementById('modalTitle')?.textContent || '';
+            const isSecondaryModal = modalTitleText.toLowerCase().includes('secondary');
+            const isRcaModal = modalTitleText.toLowerCase().includes('rca');
+            
+            // show traceback ONLY for primary metric modal
+            if (!isSecondaryModal && !isRcaModal && tracebackContainer) {{
+            
+                let tbRows = [];
+                if (Array.isArray(metricSheetData)) tbRows = metricSheetData;
+                else if (metricSheetData && typeof metricSheetData === 'object') tbRows = [metricSheetData];
+            
+                if (tbRows.length > 0) {{
+            
+                    const TRACE_KEYS = Object.keys(tbRows[0]).filter(
+                        k => ['traceback','tracebacks'].includes(k.toLowerCase())
+                    );
+            
+                    if (TRACE_KEYS.length > 0) {{
+            
+                        // deduplicate
+                        tbRows.forEach(row => {{
+                            const obj = {{}};
+                            TRACE_KEYS.forEach(k => obj[k] = row[k]);
+                            const s = JSON.stringify(obj);
+                            if (!uniqueTracebacks.some(u => JSON.stringify(u) === s)) {{
+                                uniqueTracebacks.push(obj);
+                            }}
+                        }});
+            
+                        if (uniqueTracebacks.length > 0) {{
+            
+                            function parseVal(v){{
+                                if (typeof v === 'string') {{
+                                    try {{ return JSON.parse(v); }} catch(e){{}}
+                                }}
+                                return v;
+                            }}
+            
+                            function primitiveTD(v){{
+                                const td = document.createElement('td');
+                                td.innerHTML =
+                                    v === null || v === undefined || String(v).toLowerCase()==='nan'
+                                        ? 'N/A'
+                                        : String(v).replace(/\\n/g, "<br>");
+                                return td;
+                            }}
+
+                            function stripHtml(value){{
+                                if (typeof value !== 'string') return value;
+                            
+                                const div = document.createElement('div');
+                                div.innerHTML = value;
+                                return div.textContent || div.innerText || '';
+                            }}
+            
+                            function renderCell(val){{
+                                // parse JSON string if needed
+                                if (typeof val === 'string'){{
+                                    try {{ val = JSON.parse(val); }} catch(e){{}}
+                                }}
+                            
+                                // ---------- ARRAY ----------
+                                if (Array.isArray(val)){{
+                            
+                                    if (!val.length){{
+                                        const td=document.createElement('td');
+                                        td.textContent='N/A';
+                                        return td;
+                                    }}
+                            
+                                    // array of objects → table
+                                    if (typeof val[0]==='object'){{
+                            
+                                        const table=document.createElement('table');
+                                        table.className='metric-table';
+                            
+                                        const thead=document.createElement('thead');
+                                        const trh=document.createElement('tr');
+                            
+                                        Object.keys(val[0]).forEach(k=>{{
+                                            const th=document.createElement('th');
+                                            th.textContent=k.replace(/_/g,' ');
+                                            trh.appendChild(th);
+                                        }});
+                            
+                                        thead.appendChild(trh);
+                                        table.appendChild(thead);
+                            
+                                        const tbody=document.createElement('tbody');
+                            
+                                        val.forEach(obj=>{{
+                                            const tr=document.createElement('tr');
+                                            Object.keys(val[0]).forEach(k=>{{
+                                                const td=renderCell(obj[k]);   // recursion
+                                                tr.appendChild(td);
+                                            }});
+                                            tbody.appendChild(tr);
+                                        }});
+                            
+                                        table.appendChild(tbody);
+                            
+                                        const td=document.createElement('td');
+                                        td.appendChild(table);
+                                        return td;
+                                    }}
+                            
+                                    // primitive array
+                                    const td=document.createElement('td');
+                                    td.textContent=val.map(v => stripHtml(v)).join(', ');
+                                    return td;
+                                }}
+                            
+                                // ---------- OBJECT ----------
+                                if (val && typeof val==='object'){{
+                            
+                                    const table=document.createElement('table');
+                                    table.className='metric-table';
+                            
+                                    const thead=document.createElement('thead');
+                                    const trh=document.createElement('tr');
+                            
+                                    Object.keys(val).forEach(k=>{{
+                                        const th=document.createElement('th');
+                                        th.textContent=k.replace(/_/g,' ');
+                                        trh.appendChild(th);
+                                    }});
+                            
+                                    thead.appendChild(trh);
+                                    table.appendChild(thead);
+                            
+                                    const tbody=document.createElement('tbody');
+                                    const tr=document.createElement('tr');
+                            
+                                    Object.keys(val).forEach(k=>{{
+                                        const td=renderCell(val[k]);   // recursion
+                                        tr.appendChild(td);
+                                    }});
+                            
+                                    tbody.appendChild(tr);
+                                    table.appendChild(tbody);
+                            
+                                    const td=document.createElement('td');
+                                    td.appendChild(table);
+                                    return td;
+                                }}
+                            
+                                // ---------- PRIMITIVE ----------
+                                const td=document.createElement('td');
+                                let cleanVal = stripHtml(val);
+                                td.textContent =
+                                    cleanVal===null || cleanVal===undefined || String(cleanVal).toLowerCase()==='nan'
+                                        ? 'N/A'
+                                        : cleanVal;
+                                return td;
+                            }}
+            
+                            // build table
+                            const heading = document.createElement('div');
+                            heading.textContent = "Traceback";
+                            heading.style.fontSize = "18px";
+                            heading.style.fontWeight = "700";
+                            heading.style.margin = "10px 0 6px 0";
+                            heading.style.color = "#2E86AB";
+                            tracebackContainer.appendChild(heading);
+
+                            const table=document.createElement('table');
+                            table.className='metric-table';
+            
+                            const thead=document.createElement('thead');
+                            const trHead=document.createElement('tr');
+            
+                            if (TRACE_KEYS.length===1){{
+                                let sample=parseVal(uniqueTracebacks[0][TRACE_KEYS[0]]);
+                                if (sample && typeof sample==='object' && !Array.isArray(sample)){{
+                                    Object.keys(sample).forEach(k=>{{
+                                        const th=document.createElement('th');
+                                        th.textContent=k.replace(/_/g,' ');
+                                        trHead.appendChild(th);
+                                    }});
+                                }}else{{
+                                    const th=document.createElement('th');
+                                    th.textContent=TRACE_KEYS[0];
+                                    trHead.appendChild(th);
+                                }}
+                            }}else{{
+                                TRACE_KEYS.forEach(h=>{{
+                                    const th=document.createElement('th');
+                                    th.textContent=h.replace(/_/g,' ');
+                                    trHead.appendChild(th);
+                                }});
+                            }}
+            
+                            thead.appendChild(trHead);
+                            table.appendChild(thead);
+            
+                            const tbody=document.createElement('tbody');
+            
+                            uniqueTracebacks.forEach(row=>{{
+                                const tr=document.createElement('tr');
+            
+                                if (TRACE_KEYS.length===1){{
+                                    let val=parseVal(row[TRACE_KEYS[0]]);
+                                    if (val && typeof val==='object' && !Array.isArray(val)){{
+                                        Object.values(val).forEach(v=>{{
+                                            tr.appendChild(renderCell(v));
+                                        }});
+                                    }}else{{
+                                        tr.appendChild(renderCell(val));
+                                    }}
+                                }}else{{
+                                    TRACE_KEYS.forEach(h=>{{
+                                        tr.appendChild(renderCell(row[h]));
+                                    }});
+                                }}
+            
+                                tbody.appendChild(tr);
+                            }});
+            
+                            table.appendChild(tbody);
+                            tracebackContainer.appendChild(table);
+                        }}
+                    }}
+                }}
+            }}
+
             const metricFieldsContainer = document.getElementById('metricSheetFields');
             if (metricFieldsContainer) {{
                 metricFieldsContainer.innerHTML = '';
-            
+
+                // ===== Metric Fields heading =====
+                const mfHeading = document.createElement('div');
+                mfHeading.textContent = "Metric Fields";
+                mfHeading.style.fontSize = "18px";
+                mfHeading.style.fontWeight = "700";
+                mfHeading.style.margin = "14px 0 6px 0";
+                mfHeading.style.color = "#2E86AB";
+                metricFieldsContainer.appendChild(mfHeading);
+
+                requestAnimationFrame(() => {{
+                    try {{
+                        const tbContainer = document.getElementById('tracebackFields');
+                        const mfContainer = document.getElementById('metricSheetFields');
+                        if (!tbContainer || !mfContainer) return;
+                
+                        const getHeaders = (container) => {{
+                            const table = container.querySelector('table.metric-table');
+                            if (!table) return "";
+                
+                            const ths = table.querySelectorAll('th');
+                            return Array.from(ths)
+                                .map(th => th.innerText.trim().toLowerCase())
+                                .join("|");
+                        }};
+                
+                        const tbCols = getHeaders(tbContainer);
+                        const mfCols = getHeaders(mfContainer);
+                                
+                        if (tbCols && mfCols && tbCols === mfCols) {{
+                            mfContainer.innerHTML = "";   // hide Metric Fields
+                        }}
+                
+                    }} catch(e) {{
+                        console.error("Column compare error:", e);
+                    }}
+                }});
+
                 // Normalize rows
                 let rows = [];
                 if (Array.isArray(metricSheetData)) {{
@@ -3067,7 +3468,19 @@ class ReportGenerator:
             
                 if (rows.length === 0) {{
                     metricFieldsContainer.innerHTML = '<p>N/A</p>';
-                    return;
+                    return; 
+                }}
+
+                function normalizeVal(v) {{
+                    if (v === null || v === undefined) return '';
+                    if (typeof v === 'string') {{
+                        return v
+                            .replace(/<[^>]*>/g,'')   // strip HTML
+                            .replace(/\\s+/g,' ')     // normalize spaces
+                            .trim()
+                            .toLowerCase();
+                    }}
+                    return JSON.stringify(v);
                 }}
             
                 /* ======================================================
@@ -3075,51 +3488,82 @@ class ReportGenerator:
                 ====================================================== */
                 if (rows.length > 1) {{
                     const excludeKeys = new Set([
-                    'query', 'response', 'score', 'reason', 'overall reason', 'overall_reason','reasoning',
-                    'overall score', 'overall_score', 'eval_name', 'trace_id', 'span_id', 'timestamp', 'traceback'
+                        'query','response','score','overall reason','overall_reason',
+                        'overall score','overall_score','eval_name','timestamp','traceback','tracebacks'
                     ]);
-            
-                    const headers = Object.keys(rows[0]).filter(
+                
+                    // all candidate columns
+                    const allHeaders = Object.keys(rows[0]).filter(
                         k => !excludeKeys.has(k.toLowerCase())
                     );
-            
-                    if (headers.length === 0) {{
-                        metricFieldsContainer.innerHTML = '<p>N/A</p>';
-                        return;
-                    }}
-            
-                    const table = document.createElement('table');
-                    table.className = 'metric-table';
-            
-                    // THEAD
-                    const thead = document.createElement('thead');
-                    const trHead = document.createElement('tr');
-                    headers.forEach(h => {{
-                        const th = document.createElement('th');
-                        th.textContent = h.replace(/_/g, ' ');
-                        trHead.appendChild(th);
+                
+                    const constantCols = [];
+                    const variableCols = [];
+                
+                    // detect constant vs variable
+                    allHeaders.forEach(col => {{
+                        const firstVal = normalizeVal(rows[0][col]);
+                        const same = rows.every(r => normalizeVal(r[col]) === firstVal);
+                        if (same) constantCols.push(col);
+                        else variableCols.push(col);
                     }});
-                    thead.appendChild(trHead);
-                    table.appendChild(thead);
-            
-                    // TBODY
-                    const tbody = document.createElement('tbody');
-                    rows.forEach(row => {{
-                        const tr = document.createElement('tr');
-                        headers.forEach(h => {{
-                            const td = document.createElement('td');
-                            const val = row[h];
-                            td.textContent =
-                                val === null || val === undefined || String(val).toLowerCase() === 'nan'
-                                    ? 'N/A'
-                                    : val;
-                            tr.appendChild(td);
+                
+                    // ===== render constant columns outside =====
+                    constantCols.forEach(col => {{
+                        const section = document.createElement('div');
+                        section.className = 'modal-section';
+                
+                        const heading = document.createElement('h4');
+                        heading.textContent = col.replace(/_/g,' ');
+                        section.appendChild(heading);
+                
+                        const content = document.createElement('div');
+                        const v = rows[0][col];
+                        content.innerHTML =
+                            v === null || v === undefined || String(v).toLowerCase()==='nan'
+                                ? 'N/A'
+                                : String(v).replace(/\\n/g,"<br>");
+                        section.appendChild(content);
+                
+                        metricFieldsContainer.appendChild(section);
+                    }});
+                
+                    // ===== build table ONLY if variable columns exist =====
+                    if (variableCols.length > 0) {{
+                
+                        const table = document.createElement('table');
+                        table.className = 'metric-table';
+                
+                        // header
+                        const thead = document.createElement('thead');
+                        const trHead = document.createElement('tr');
+                        variableCols.forEach(col => {{
+                            const th = document.createElement('th');
+                            th.textContent = col.replace(/_/g,' ');
+                            trHead.appendChild(th);
                         }});
-                        tbody.appendChild(tr);
-                    }});
-            
-                    table.appendChild(tbody);
-                    metricFieldsContainer.appendChild(table);
+                        thead.appendChild(trHead);
+                        table.appendChild(thead);
+                
+                        // body
+                        const tbody = document.createElement('tbody');
+                        rows.forEach(row => {{
+                            const tr = document.createElement('tr');
+                            variableCols.forEach(col => {{
+                                const td = document.createElement('td');
+                                const v = row[col];
+                                td.innerHTML =
+                                    v === null || v === undefined || String(v).toLowerCase()==='nan'
+                                        ? 'N/A'
+                                        : String(v).replace(/\\n/g,"<br>");
+                                tr.appendChild(td);
+                            }});
+                            tbody.appendChild(tr);
+                        }});
+                
+                        table.appendChild(tbody);
+                        metricFieldsContainer.appendChild(table);
+                    }}
                 }}
             
                 /* ======================================================
@@ -3128,8 +3572,8 @@ class ReportGenerator:
                 else {{
                     const record = rows[0];
                     const excludeKeys = new Set([
-                    'query', 'response', 'score', 'reason', 'overall reason', 'overall_reason','reasoning',
-                    'overall score', 'overall_score', 'eval_name', 'trace_id', 'span_id', 'timestamp', 'traceback'
+                    'query', 'response', 'score', 'overall reason', 'overall_reason',
+                    'overall score', 'overall_score', 'eval_name', 'timestamp', 'traceback', 'tracebacks'
                     ]);
             
                     Object.entries(record).forEach(([key, value]) => {{
@@ -3149,7 +3593,7 @@ class ReportGenerator:
                         section.appendChild(heading);
             
                         const content = document.createElement('div');
-                        content.textContent = value;
+                        content.innerHTML = String(value).replace(/\\n/g, "<br>");
                         section.appendChild(content);
             
                         metricFieldsContainer.appendChild(section);
@@ -3200,6 +3644,8 @@ class ReportGenerator:
         }}
 
         function openRcaModal(rowIndex) {{
+            const tb = document.getElementById('tracebackFields');
+            if (tb) tb.innerHTML = ''
             const modal = document.getElementById("detailModal");
             const rca = allTableData[rowIndex].rca;
             if (!modal || !rca) return;
@@ -3207,26 +3653,77 @@ class ReportGenerator:
             document.getElementById("modalTitle").textContent = "RCA Details";
             document.getElementById("modalSubtitle").textContent = "";
         
-            document.querySelector(".modal-left .modal-section").style.display = "none"; 
+            // Show the query section
+            document.querySelector(".modal-left .modal-section").style.display = "block"; 
             document.querySelector(".collapsible-section").style.display = "none";       
             document.querySelector(".modal-right").style.display = "none";               
+        
+            // Set the query
+            document.getElementById("modalQuestion").innerHTML = (allTableData[rowIndex].query || 'N/A').replace(/\\n/g, "<br>");
         
             const container = document.getElementById("metricSheetFields");
             container.innerHTML = "";
         
-           Object.entries(rca.details).forEach(([key, value]) => {{
-                if (value === null || value === undefined) return;
-            
-                const section = document.createElement("div");
-                section.className = "modal-section";
-            
-                section.innerHTML = `
-            <h4>${{key.replace(/_/g, " ")}}</h4>
-            <p>${{value}}</p>
-                `;
-            
-                container.appendChild(section);
+            const details = rca.details;
+            const isArray = Array.isArray(details);
+            const dataForTable1 = isArray ? details : (details && Object.keys(details).length > 0 ? [details] : []);
+            const dataForTable2 = isArray ? (details.length > 0 ? details[0] : {{}}) : details;
+        
+            // Define fields for first table
+            const failureFields = ['Failure_agent_name', 'Failure Category', 'Agent_spec_fragment', 'Actual_problematic_output', 'Propagation_chain', 'Root cause', 'Span_id'];
+            // Define fields for second table
+            const loopingFields = ['Looping_agent', 'Loop_count', 'Reason', 'Loop_span_ids'];
+            const table1 = document.createElement('table');
+            table1.className = 'metric-table';
+            const thead1 = document.createElement('thead');
+            const trHead1 = document.createElement('tr');
+            failureFields.forEach(field => {{
+                const th = document.createElement('th');
+                th.textContent = field.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+                trHead1.appendChild(th);
             }});
+            thead1.appendChild(trHead1);
+            table1.appendChild(thead1);
+        
+            const tbody1 = document.createElement('tbody');
+            dataForTable1.forEach(item => {{
+                const tr = document.createElement('tr');
+                failureFields.forEach(field => {{
+                    const td = document.createElement('td');
+                    td.innerHTML = item[field] ? String(item[field]).replace(/\\n/g, "<br>") : 'N/A';
+                    tr.appendChild(td);
+                }});
+                tbody1.appendChild(tr);
+            }});
+            table1.appendChild(tbody1);
+            container.appendChild(table1);
+        
+            // Add some spacing
+            container.appendChild(document.createElement('br'));
+        
+            // Create second table for looping details
+            const table2 = document.createElement('table');
+            table2.className = 'metric-table';
+            const thead2 = document.createElement('thead');
+            const trHead2 = document.createElement('tr');
+            loopingFields.forEach(field => {{
+                const th = document.createElement('th');
+                th.textContent = field.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+                trHead2.appendChild(th);
+            }});
+            thead2.appendChild(trHead2);
+            table2.appendChild(thead2);
+        
+            const tbody2 = document.createElement('tbody');
+            const tr2 = document.createElement('tr');
+            loopingFields.forEach(field => {{
+                const td = document.createElement('td');
+                td.textContent = dataForTable2[field] || 'N/A';
+                tr2.appendChild(td);
+            }});
+            tbody2.appendChild(tr2);
+            table2.appendChild(tbody2);
+            container.appendChild(table2);
         
             modal.style.display = "block";
         }}
@@ -3261,7 +3758,7 @@ class ReportGenerator:
                 width: 160,
                 autosize: false,
                 annotations: [{{
-                    text: score.toFixed(3) + '<br>' + (isPass ? 'PASS' : 'FAIL'),
+                    text: score.toFixed(2) + '<br>' + (isPass ? 'PASS' : 'FAIL'),
                     x: 0.5,
                     y: 0.5,
                     font: {{ size: 14, color: isPass ? passColor : failColor, weight: 'bold' }},
