@@ -1,0 +1,64 @@
+{
+  "file_name": "product_catalog_robustness_eval.json",
+  "domain": "E-commerce / Product Catalog",
+  "description": "This file contains parent product listing nodes and their associated child nodes (variant descriptions, regional copies, seller summaries). The Robustness metric will evaluate whether each child has drifted from its parent.",
+
+  "parents": [
+    {
+      "parent_id": "P001",
+      "parent_context": "The Sony WH-1000XM5 is a premium over-ear wireless headphone featuring industry-leading active noise cancellation (ANC). It supports Bluetooth 5.2, offers up to 30 hours of battery life, and comes with a foldable design for portability. The headphone is available in two colors: Midnight Black and Platinum Silver. It is priced at $399 and is compatible with both Android and iOS devices. The headphone also features multipoint connection, allowing it to connect to two devices simultaneously.",
+      "children": [
+        {
+          "child_id": "C001",
+          "child_context": "Sony WH-1000XM5 over-ear headphones deliver best-in-class active noise cancellation with Bluetooth 5.2 connectivity. Battery life goes up to 30 hours on a single charge. Available in Midnight Black and Platinum Silver at $399. Works seamlessly with Android and iOS. Supports multipoint connection for dual-device pairing."
+        },
+        {
+          "child_id": "C002",
+          "child_context": "The Sony WH-1000XM5 wireless headphone offers excellent noise cancellation and Bluetooth 5.2 support. It has a battery life of up to 20 hours and is priced at $349. Available in Black and Silver colors. Compatible with Android and iOS."
+        },
+        {
+          "child_id": "C003",
+          "child_context": "Sony WH-1000XM5 — a premium wireless headphone with industry-leading ANC technology. Foldable design makes it easy to carry. Priced at $399, available in Midnight Black and Platinum Silver. Bluetooth 5.2, 30-hour battery, and multipoint dual-device connection supported. Compatible with Android and iOS devices."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P002",
+      "parent_context": "The Nike Air Max 270 is a men's lifestyle sneaker featuring Nike's largest Air unit in the heel, providing all-day comfort. The shoe is made with a breathable mesh upper and a foam midsole for lightweight cushioning. It is available in sizes US 7 to US 13 and comes in three colorways: Black/White, University Red, and Total Orange. The retail price is $150. The shoe is not recommended for high-performance running and is designed primarily for casual wear.",
+      "children": [
+        {
+          "child_id": "C004",
+          "child_context": "Nike Air Max 270 men's sneaker features the biggest Air heel unit Nike has ever made, delivering superior comfort for all-day wear. Breathable mesh upper and foam midsole keep it light. Available in Black/White, University Red, and Total Orange in sizes US 7–13. Priced at $150. Best suited for casual use, not high-performance running."
+        },
+        {
+          "child_id": "C005",
+          "child_context": "The Nike Air Max 270 is a versatile running and lifestyle shoe for men. It features a large Air unit in the heel and a breathable mesh upper. Comes in sizes US 7 to US 13 and is priced at $150. Available in multiple colorways."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P003",
+      "parent_context": "The Apple MacBook Air M3 is a 13-inch laptop powered by Apple's M3 chip, offering up to 18 hours of battery life. It features a Liquid Retina display with 2560x1664 resolution, 8GB unified memory, and 256GB SSD storage as base configuration. The laptop supports Wi-Fi 6E and Bluetooth 5.3. It is available in four finishes: Midnight, Starlight, Space Gray, and Sky Blue. Starting price is $1,099. It does not have a fan, making it completely silent during operation.",
+      "children": [
+        {
+          "child_id": "C006",
+          "child_context": "Apple MacBook Air M3 is powered by the M3 chip with up to 18 hours battery life. The 13-inch Liquid Retina display has a resolution of 2560x1664. Base model starts at $1,099 with 8GB memory and 256GB SSD. Comes in Midnight, Starlight, Space Gray, and Sky Blue. Supports Wi-Fi 6E and Bluetooth 5.3. Fanless design ensures completely silent operation."
+        },
+        {
+          "child_id": "C007",
+          "child_context": "The MacBook Air M3 features a stunning 13-inch Liquid Retina display and is powered by the Apple M3 chip. It starts at $1,099 with 8GB RAM and 256GB SSD. Available in Midnight, Starlight, and Space Gray. Battery lasts up to 15 hours. Wi-Fi 6E and Bluetooth 5.3 are supported."
+        },
+        {
+          "child_id": "C008",
+          "child_context": "Apple's MacBook Air M3 is a fanless 13-inch laptop that runs silently. Powered by the M3 chip, it offers up to 18 hours of battery. The base configuration includes 8GB unified memory and 256GB SSD at $1,099. Liquid Retina display with 2560x1664 resolution. Available in four colors: Midnight, Starlight, Space Gray, and Sky Blue. Supports Wi-Fi 6E and Bluetooth 5.3."
+        },
+        {
+          "child_id": "C009",
+          "child_context": "The Apple MacBook Air M3 is a high-performance laptop ideal for professionals and students alike. It is equipped with the M3 chip and a beautiful Retina display. Starting price is $999 and it is available in various color options. Offers long battery life and fast SSD storage."
+        }
+      ]
+    }
+  ]
+}

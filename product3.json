@@ -1,0 +1,68 @@
+{
+  "file_name": "product_catalog_robustness_eval_03.json",
+  "domain": "E-commerce / Product Catalog",
+  "description": "This file covers personal care, wearables, and outdoor gear product listings with parent nodes and their child variant/summary nodes for robustness drift evaluation.",
+
+  "parents": [
+    {
+      "parent_id": "P001",
+      "parent_context": "The Philips Sonicare DiamondClean 9900 Prestige is an electric toothbrush that uses SenseIQ technology to automatically adjust brushing intensity based on pressure and technique. It has 4 brushing modes (Clean, White+, Gum Health, Deep Clean+) and 3 intensity settings. The brush head should be replaced every 3 months, and the device provides a replacement reminder. It charges via inductive charging case and offers up to 3 weeks of battery life per charge. Compatible with the Philips Sonicare app for personalized brushing feedback. Priced at $329.99, available in Lunar Blue and Champagne Gold.",
+      "children": [
+        {
+          "child_id": "C001",
+          "child_context": "Philips Sonicare DiamondClean 9900 Prestige electric toothbrush uses SenseIQ to adapt brushing intensity to your pressure and technique automatically. Offers 4 modes: Clean, White+, Gum Health, Deep Clean+, with 3 intensity levels. Brush head replacement reminder included — replace every 3 months. Inductive charging case provides up to 3 weeks battery. App-connected for personalized feedback. Available in Lunar Blue and Champagne Gold at $329.99."
+        },
+        {
+          "child_id": "C002",
+          "child_context": "The Philips Sonicare DiamondClean 9900 Prestige is a smart electric toothbrush with SenseIQ adaptive technology. It has multiple brushing modes and intensity settings. Charges wirelessly and has a long battery life. App compatible for brushing insights. Priced at $329.99."
+        },
+        {
+          "child_id": "C003",
+          "child_context": "Philips Sonicare DiamondClean 9900 Prestige features SenseIQ technology for automatic intensity adjustment. Includes 4 brushing modes and 3 intensity settings. Brush head should be replaced every 6 months; reminder feature included. Charges via inductive case with 3 weeks battery life. App-enabled for feedback. Priced at $329.99 in Lunar Blue and Champagne Gold."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P002",
+      "parent_context": "The Garmin Fenix 7X Solar is a premium multisport GPS smartwatch with solar charging capability that extends battery life up to 37 days in smartwatch mode. The watch features a 51mm titanium bezel case with a scratch-resistant sapphire lens. It supports over 30 sport modes including trail running, skiing, and open water swimming. The watch is water-resistant up to 100 meters. It includes advanced health monitoring features: heart rate, SpO2, stress tracking, and sleep monitoring. Priced at $899.99, available in Carbon Gray DLC Titanium and Mineral Blue DLC Titanium finishes.",
+      "children": [
+        {
+          "child_id": "C004",
+          "child_context": "Garmin Fenix 7X Solar multisport GPS smartwatch with solar charging extends battery to up to 37 days in smartwatch mode. 51mm titanium case with sapphire scratch-resistant lens. Supports 30+ sport modes including trail running, skiing, and open water swimming. Water-resistant to 100 meters. Monitors heart rate, SpO2, stress, and sleep. Priced at $899.99 in Carbon Gray DLC Titanium and Mineral Blue DLC Titanium."
+        },
+        {
+          "child_id": "C005",
+          "child_context": "The Garmin Fenix 7X Solar is a rugged GPS smartwatch with solar charging. Battery life in smartwatch mode extends up to 37 days. Has a 51mm titanium bezel and sapphire lens. Tracks multiple sports and is water-resistant to 50 meters. Includes heart rate and SpO2 monitoring. Price starts at $899.99."
+        },
+        {
+          "child_id": "C006",
+          "child_context": "Garmin Fenix 7X Solar is a top-tier GPS smartwatch for outdoor athletes. Solar charging supports up to 37 days battery in smartwatch mode. Built with a 51mm titanium case and sapphire lens. 30+ sport modes supported. Water-resistant to 100m. Health tracking includes heart rate, SpO2, stress, and sleep. Available in Carbon Gray DLC Titanium and Mineral Blue DLC Titanium at $899.99."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P003",
+      "parent_context": "The Coleman Sundome 4-Person Camping Tent is designed for three-season use and can be set up in approximately 10 minutes. The tent features a WeatherTec system with patented corner welds and inverted seams to keep water out. It has two doors and three windows for ventilation. Interior dimensions are 9 x 7 feet with a 4-foot 11-inch center height. The tent includes a rainfly that covers the full tent body. It weighs 7 lbs 13 oz and packs into a carry bag included in the purchase. Priced at $89.99, available in Blue/Grey and Red/Grey color options.",
+      "children": [
+        {
+          "child_id": "C007",
+          "child_context": "Coleman Sundome 4-Person Tent is a three-season tent that sets up in about 10 minutes. WeatherTec system with patented corner welds and inverted seams prevents leaks. Features 2 doors and 3 windows. Interior space: 9 x 7 ft with 4 ft 11 in center height. Full rainfly included. Weighs 7 lbs 13 oz with carry bag included. Priced at $89.99 in Blue/Grey and Red/Grey."
+        },
+        {
+          "child_id": "C008",
+          "child_context": "Coleman Sundome 4-Person Camping Tent is perfect for all-season outdoor adventures. Easy 10-minute setup with WeatherTec waterproofing system. Has two doors and three windows. Spacious interior with full rainfly coverage. Lightweight at under 8 lbs and comes with a carry bag. Priced at $89.99."
+        },
+        {
+          "child_id": "C009",
+          "child_context": "The Coleman Sundome 4-Person Tent offers three-season protection with a fast 10-minute setup. WeatherTec corner welds and inverted seams keep the interior dry. Two doors and three windows for airflow. Interior is 9 x 7 feet with a center height of 4 ft 11 in. Full rainfly included. Weighs 7 lbs 13 oz. Available in Blue/Grey and Red/Grey at $89.99, carry bag included."
+        },
+        {
+          "child_id": "C010",
+          "child_context": "Coleman Sundome 4-Person Tent is a budget-friendly three-season camping tent. Easy to set up in around 10 minutes. Features the WeatherTec system for water resistance. Comes in Blue/Grey color only. Interior dimensions are 9 x 7 feet. Priced at $119.99 and includes a carry bag."
+        }
+      ]
+    }
+  ]
+}
