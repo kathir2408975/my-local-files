@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GenAI Model Monitoring Report</title>
+    <style>
+        /* =============== GLOBAL STYLES =============== */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        /* =============== HEADER STYLES =============== */
+        .report-header {
+            background: linear-gradient(135deg, #2E86AB 0%, #A23B72 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .report-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(255,255,255,0.03) 2px,
+                rgba(255,255,255,0.03) 4px
+            );
+            animation: shimmer 20s linear infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .report-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
+        }
+        
+        .report-subtitle {
+            font-size: 1.4rem;
+            font-weight: 300;
+            margin-bottom: 15px;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .report-description {
+            font-size: 1rem;
+            max-width: 800px;
+            margin: 0 auto;
+            opacity: 0.85;
+            line-height: 1.6;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .report-timestamp {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            z-index: 2;
+        }
+        
+        /* =============== TAB NAVIGATION =============== */
+        .tab-navigation {
+            background: #f8f9fa;
+            border-bottom: 3px solid #2E86AB;
+            display: flex;
+            justify-content: center;
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 20px 30px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            color: #666;
+        }
+        
+        .tab-button:hover {
+            background: rgba(46, 134, 171, 0.1);
+            color: #2E86AB;
+        }
+        
+        .tab-button.active {
+            background: #2E86AB;
+            color: white;
+            box-shadow: inset 0 -3px 0 #F18F01;
+        }
+        
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #F18F01;
+        }
+        
+        /* =============== TAB CONTENT =============== */
+        .tab-content {
+            display: none;
+            padding: 30px;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* =============== CARD COMPONENTS =============== */
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 25px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            border: 1px solid #dee2e6;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #2E86AB 0%, #A23B72 100%);
+            color: white;
+            padding: 20px;
+            font-weight: 600;
+            font-size: 1.2rem;
+            position: relative;
+        }
+        
+        .card-content {
+            padding: 20px;
+        }
+        
+        /* =============== CHARTS GRID =============== */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .chart-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+        
+        .chart-card.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        /* =============== TABLES =============== */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+            margin-bottom: 25px;
+        }
+        
+        .modern-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+        
+        .modern-table th {
+            background: linear-gradient(135deg, #2E86AB 0%, #A23B72 100%);
+            color: white;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            border: none;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .modern-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: top;
+        }
+        
+        .modern-table tr:hover {
+            background: rgba(46, 134, 171, 0.04);
+        }
+        
+        .modern-table tr:nth-child(even) {
+            background: rgba(0,0,0,0.02);
+        }
+        
+        .modern-table tr:nth-child(even):hover {
+            background: rgba(46, 134, 171, 0.04);
+        }
+        
+        /* =============== STATUS INDICATORS =============== */
+        .status-cell {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-align: center;
+            min-width: 80px;
+            display: inline-block;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .status-cell:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .status-passed {
+            background: #28a745;
+            color: white;
+        }
+        
+        .status-failed {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .status-skipped {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .metric-score {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .below-threshold {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            color: #dc3545;
+            font-weight: bold;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .equal-threshold {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            color: #e65100;
+            font-weight: bold;
+            border-left: 4px solid #ffc107;
+        }
+        
+        /* =============== PAGINATION =============== */
+        .pagination-container {
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .page-btn {
+            padding: 10px 15px;
+            border: 1px solid #dee2e6;
+            background: white;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .page-btn:hover:not(:disabled) {
+            background: #2E86AB;
+            color: white;
+            border-color: #2E86AB;
+        }
+        
+        .page-btn.active {
+            background: #2E86AB;
+            color: white;
+            border-color: #2E86AB;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .page-btn:disabled {
+            background: #f8f9fa;
+            color: #999;
+            cursor: not-allowed;
+            border-color: #dee2e6;
+        }
+        
+        .page-info {
+            font-size: 0.9rem;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .rows-selector {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            font-size: 14px;
+        }
+        
+        /* =============== MODAL STYLES =============== */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 2% auto;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            width: 95%;
+            max-width: 1400px;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, #2E86AB 0%, #A23B72 100%);
+            color: white;
+            padding: 25px;
+            position: relative;
+        }
+        
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+        }
+        
+        .modal-subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+            margin: 5px 0 0;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.1);
+        }
+        
+        .modal-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .modal-left {
+            flex: 2;
+            padding: 25px;
+            overflow-y: auto;
+            border-right: 1px solid #dee2e6;
+        }
+        
+        .modal-right {
+            flex: 1;
+            padding: 25px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+        
+        .modal-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #F18F01;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .modal-section h4 {
+            color: #2E86AB;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .modal-section p {
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .collapsible-section {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        
+        .collapsible-header {
+            background: linear-gradient(135deg, #f8f9fa 0%, rgba(46, 134, 171, 0.1) 100%);
+            padding: 15px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #F18F01;
+            transition: all 0.2s ease;
+        }
+        
+        .collapsible-header:hover {
+            background: linear-gradient(135deg, rgba(46, 134, 171, 0.1) 0%, rgba(46, 134, 171, 0.2) 100%);
+        }
+        
+        .collapsible-content {
+            padding: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+            border-left: 4px solid #F18F01;
+        }
+        
+        .collapsible-content.collapsed {
+            max-height: 0;
+            padding: 0 20px;
+            overflow: hidden;
+        }
+        
+        .toggle-icon {
+            font-size: 1.2rem;
+            transition: transform 0.3s ease;
+            color: #2E86AB;
+        }
+        
+        .toggle-icon.expanded {
+            transform: rotate(180deg);
+        }
+        
+        .score-visualization {
+            text-align: center;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            max-width: 100%;
+            overflow: hidden;
+        }
+        
+        .score-visualization h4 {
+            margin-bottom: 10px;
+            margin-top: 0;
+        }
+        
+        #scorePieChart {
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            max-width: 100%;
+            max-height: 200px;
+            overflow: hidden;
+        }
+        
+        /* =============== RESPONSIVE DESIGN =============== */
+        @media (max-width: 1200px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .modal-body {
+                flex-direction: column;
+            }
+            
+            .modal-left, .modal-right {
+                flex: none;
+            }
+            
+            .modal-left {
+                border-right: none;
+                border-bottom: 1px solid #dee2e6;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .report-header {
+                padding: 30px 20px;
+            }
+            
+            .report-title {
+                font-size: 2rem;
+            }
+            
+            .report-subtitle {
+                font-size: 1.2rem;
+            }
+            
+            .tab-content {
+                padding: 20px;
+            }
+            
+            .pagination-container {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .pagination-controls {
+                justify-content: center;
+            }
+            
+            .modal-content {
+                width: 98%;
+                max-height: 95vh;
+            }
+            
+            .modal-left, .modal-right {
+                padding: 20px;
+            }
+        }
+        
+        /* =============== LOADING STATES =============== */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(46, 134, 171, 0.3);
+            border-radius: 50%;
+            border-top-color: #2E86AB;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        /* =============== UTILITY CLASSES =============== */
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .mb-0 { margin-bottom: 0; }
+        .mb-1 { margin-bottom: 0.5rem; }
+        .mb-2 { margin-bottom: 1rem; }
+        .mb-3 { margin-bottom: 1.5rem; }
+        .mt-0 { margin-top: 0; }
+        .mt-1 { margin-top: 0.5rem; }
+        .mt-2 { margin-top: 1rem; }
+        .mt-3 { margin-top: 1.5rem; }
+        
+        .p-0 { padding: 0; }
+        .p-1 { padding: 0.5rem; }
+        .p-2 { padding: 1rem; }
+        .p-3 { padding: 1.5rem; }
+        
+        .font-weight-bold { font-weight: 700; }
+        .font-weight-normal { font-weight: 400; }
+        .font-size-sm { font-size: 0.875rem; }
+        .font-size-lg { font-size: 1.125rem; }
+        
+        .text-primary { color: #2E86AB; }
+        .text-secondary { color: #A23B72; }
+        .text-success { color: #28a745; }
+        .text-danger { color: #dc3545; }
+        .text-warning { color: #ffc107; }
+        .text-muted { color: #666; }
+        </style>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="report-header">
+            <div class="report-timestamp">Generated: 2025-11-19 06:07:18</div>
+            <h1 class="report-title">GenAI Model Monitoring Report</h1>
+            <h2 class="report-subtitle">LLM-as-a-Judge Assurance Pipeline</h2>
+            <p class="report-description">Advanced monitoring pipeline that evaluates GenAI model outputs against predefined criteria, ensuring quality, safety, and alignment with project requirements.</p>
+        </div>
+        
+        <nav class="tab-navigation">
+            <button class="tab-button active" onclick="showTab('metrics', event)">
+                📊 Metrics Summary
+            </button>
+            <button class="tab-button" onclick="showTab('analytics', event)">
+                📈 Analytics Dashboard
+            </button>
+            <button class="tab-button" onclick="showTab('details', event)">
+                🔍 Detailed Results
+            </button>
+        </nav>
+        
+        <main>
+            <div id="metrics" class="tab-content active">
+                <div class="card">
+                    <div class="card-content">
+                        <div class="table-container">
+<table class="modern-table">
+<thead><tr>
+<th>Metrics</th>
+<th>Description</th>
+<th>Score Interpretability</th>
+<th>Approach Taken</th>
+<th>Threshold</th>
+<th>Aggregate Score</th>
+</tr></thead>
+<tbody>
+<tr>
+<td class=" metric-score">Metrics_1</td>
+<td class=" metric-score">Description_1</td>
+<td class=" metric-score">Interpret_1</td>
+<td class=" metric-score">LLM</td>
+<td class=" metric-score">0.700</td>
+<td class="below-threshold metric-score">0.550</td>
+</tr>
+<tr>
+<td class=" metric-score">Metrics_2</td>
+<td class=" metric-score">Description_2</td>
+<td class=" metric-score">Interpret_2</td>
+<td class=" metric-score">LLM</td>
+<td class=" metric-score">0.900</td>
+<td class="equal-threshold metric-score">0.900</td>
+</tr>
+</tbody>
+</table>
+</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="analytics" class="tab-content">
+                <div class="charts-grid">
+                    <div class="chart-card">
+                        <div class="card-header">
+                            <h3>🎯 Overall Performance Distribution</h3>
+                        </div>
+                        <div class="card-content">
+                            <div>                            <div id="09da9cff-d41c-4a11-9808-96ecbf4a6c38" class="plotly-graph-div" style="height:450px; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("09da9cff-d41c-4a11-9808-96ecbf4a6c38")) {                    Plotly.newPlot(                        "09da9cff-d41c-4a11-9808-96ecbf4a6c38",                        [{"domain":{"x":[0.0,1.0],"y":[0.0,1.0]},"hole":0.4,"hovertemplate":"\u003cb\u003e%{label}\u003c\u002fb\u003e\u003cbr\u003ePercentage: %{percent}\u003cextra\u003e\u003c\u002fextra\u003e","labels":["Failed (14)","Passed (16)"],"legendgroup":"","name":"","showlegend":true,"textfont":{"size":12},"textinfo":"label+percent","textposition":"inside","values":[14,16],"type":"pie"}],                        {"annotations":[{"font":{"size":16},"showarrow":false,"text":"Total\u003cbr\u003e30","x":0.5,"y":0.5}],"font":{"family":"'Segoe UI', Tahoma, Geneva, Verdana, sans-serif","size":12},"height":450,"legend":{"orientation":"h","tracegroupgap":0,"x":0.5,"xanchor":"center","y":-0.2,"yanchor":"bottom"},"margin":{"b":100,"l":60,"r":60,"t":80},"paper_bgcolor":"rgba(0,0,0,0)","piecolorway":["#dc3545","#28a745"],"plot_bgcolor":"rgba(0,0,0,0)","showlegend":true,"template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmapgl":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmapgl"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0.05},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"title":{"text":"Overall Performance Distribution"},"xaxis":{"gridcolor":"#dee2e6","showgrid":true,"tickangle":-45,"tickfont":{"size":10}},"yaxis":{"gridcolor":"#dee2e6","showgrid":true,"tickfont":{"size":10}}},                        {"responsive": true}                    )                };                            </script>        </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <div class="card-header">
+                            <h3>📊 Metrics Performance Comparison</h3>
+                        </div>
+                        <div class="card-content">
+                            <div>                            <div id="06a5a039-47ce-4da4-ab93-6d3a82f9703b" class="plotly-graph-div" style="height:450px; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("06a5a039-47ce-4da4-ab93-6d3a82f9703b")) {                    Plotly.newPlot(                        "06a5a039-47ce-4da4-ab93-6d3a82f9703b",                        [{"hovertemplate":"\u003cb\u003e%{x}\u003c\u002fb\u003e\u003cbr\u003eScore: %{y:.3f}\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":["#dc3545","#28a745"]},"name":"Actual Score","opacity":0.8,"x":["Metrics_1","Metrics_2"],"y":[0.55,0.9],"type":"bar"},{"hovertemplate":"\u003cb\u003e%{x}\u003c\u002fb\u003e\u003cbr\u003eThreshold: %{y:.3f}\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#F18F01","dash":"dash","width":3},"marker":{"color":"#F18F01","size":8},"mode":"lines+markers","name":"Threshold","x":["Metrics_1","Metrics_2"],"y":[0.7,0.9],"type":"scatter"}],                        {"font":{"family":"'Segoe UI', Tahoma, Geneva, Verdana, sans-serif","size":12},"height":450,"legend":{"orientation":"h","x":0.5,"xanchor":"center","y":1.02,"yanchor":"bottom"},"margin":{"b":100,"l":60,"r":60,"t":80},"paper_bgcolor":"rgba(0,0,0,0)","plot_bgcolor":"rgba(0,0,0,0)","template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmapgl":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmapgl"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0.05},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"title":{"text":"Score vs Threshold Comparison"},"xaxis":{"gridcolor":"#dee2e6","showgrid":true,"tickangle":-45,"tickfont":{"size":10},"title":{"text":"Metrics"}},"yaxis":{"gridcolor":"#dee2e6","range":[0,1.1],"showgrid":true,"tickfont":{"size":10},"title":{"text":"Score"}}},                        {"responsive": true}                    )                };                            </script>        </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-card full-width">
+                        <div class="card-header">
+                            <h3>📋 Metrics Overview by Status</h3>
+                        </div>
+                        <div class="card-content">
+                            <div>                            <div id="531d1b29-1f30-4fb7-a9b2-dab10341804c" class="plotly-graph-div" style="height:450px; width:100%;"></div>            <script type="text/javascript">                                    window.PLOTLYENV=window.PLOTLYENV || {};                                    if (document.getElementById("531d1b29-1f30-4fb7-a9b2-dab10341804c")) {                    Plotly.newPlot(                        "531d1b29-1f30-4fb7-a9b2-dab10341804c",                        [{"alignmentgroup":"True","hovertemplate":"Status=Failed\u003cbr\u003eMetric=%{x}\u003cbr\u003eCount=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"Failed","marker":{"color":"#dc3545","pattern":{"shape":""}},"name":"Failed","offsetgroup":"Failed","orientation":"v","showlegend":true,"textposition":"auto","x":["Metrics_1","Metrics_2"],"xaxis":"x","y":[11,3],"yaxis":"y","type":"bar"},{"alignmentgroup":"True","hovertemplate":"Status=Passed\u003cbr\u003eMetric=%{x}\u003cbr\u003eCount=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"Passed","marker":{"color":"#28a745","pattern":{"shape":""}},"name":"Passed","offsetgroup":"Passed","orientation":"v","showlegend":true,"textposition":"auto","x":["Metrics_1","Metrics_2"],"xaxis":"x","y":[4,12],"yaxis":"y","type":"bar"},{"alignmentgroup":"True","hovertemplate":"Status=Skipped\u003cbr\u003eMetric=%{x}\u003cbr\u003eCount=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"Skipped","marker":{"color":"#6c757d","pattern":{"shape":""}},"name":"Skipped","offsetgroup":"Skipped","orientation":"v","showlegend":true,"textposition":"auto","x":["Metrics_1","Metrics_2"],"xaxis":"x","y":[0,0],"yaxis":"y","type":"bar"}],                        {"barmode":"group","font":{"family":"'Segoe UI', Tahoma, Geneva, Verdana, sans-serif","size":12},"height":450,"legend":{"orientation":"h","title":{"text":"Status"},"tracegroupgap":0,"x":0.5,"xanchor":"center","y":1.02,"yanchor":"bottom"},"margin":{"b":100,"l":60,"r":60,"t":80},"paper_bgcolor":"rgba(0,0,0,0)","plot_bgcolor":"rgba(0,0,0,0)","template":{"data":{"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmapgl":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmapgl"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"geo":{"bgcolor":"white","lakecolor":"white","landcolor":"#E5ECF6","showlakes":true,"showland":true,"subunitcolor":"white"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"light"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","gridwidth":2,"linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white"}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"ternary":{"aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"bgcolor":"#E5ECF6","caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"title":{"x":0.05},"xaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","zerolinewidth":2}}},"title":{"text":"Metrics Performance Overview"},"xaxis":{"anchor":"y","domain":[0.0,1.0],"gridcolor":"#dee2e6","showgrid":true,"tickangle":-45,"tickfont":{"size":10},"title":{"text":"Metrics"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"gridcolor":"#dee2e6","showgrid":true,"tickfont":{"size":10},"title":{"text":"Number of Test Cases"}}},                        {"responsive": true}                    )                };                            </script>        </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="details" class="tab-content">
+                    <div class="card-content p-0">
+                        <div class="table-container">
+<table class="modern-table">
+<thead><tr>
+<th style="min-width: 200px;">Question</th>
+<th style="min-width: 200px;">Response</th>
+<th class="text-center" style="min-width: 120px;">Metrics 1</th>
+<th class="text-center" style="min-width: 120px;">Metrics 2</th>
+</tr></thead>
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+
+        <div class="pagination-container">
+            <div class="pagination-controls">
+                <select id="rowsPerPage" class="rows-selector" onchange="changeRowsPerPage()">
+                    <option value="10">10 rows/page</option>
+                    <option value="25">25 rows/page</option>
+                    <option value="50">50 rows/page</option>
+                    <option value="100">100 rows/page</option>
+                </select>
+            </div>
+            <div class="pagination-controls" id="paginationButtons"></div>
+            <div class="page-info">
+                <span id="pageInfo">Page 1 of 1</span>
+            </div>
+        </div>
+        
+
+            <script>
+            let currentPage = 1;
+            let rowsPerPage = 10;
+            let totalRows = 0;
+            let allTableData = [{"index": 0, "question": "question_1", "response": "response_1", "metrics": {"Metrics_1": {"value": "0.000", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "0.500", "status": "Failed", "class": "status-failed", "clickable": true}}}, {"index": 1, "question": "question_2", "response": "response_2", "metrics": {"Metrics_1": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}, "Metrics_2": {"value": "0.800", "status": "Failed", "class": "status-failed", "clickable": true}}}, {"index": 2, "question": "question_3", "response": "response_3", "metrics": {"Metrics_1": {"value": "0.200", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "0.200", "status": "Failed", "class": "status-failed", "clickable": true}}}, {"index": 3, "question": "question_4", "response": "response_4", "metrics": {"Metrics_1": {"value": "0.300", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 4, "question": "question_5", "response": "response_5", "metrics": {"Metrics_1": {"value": "0.500", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 5, "question": "question_6", "response": "response_6", "metrics": {"Metrics_1": {"value": "0.490", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 6, "question": "question_7", "response": "response_7", "metrics": {"Metrics_1": {"value": "0.520", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 7, "question": "question_8", "response": "response_8", "metrics": {"Metrics_1": {"value": "0.550", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 8, "question": "question_9", "response": "response_9", "metrics": {"Metrics_1": {"value": "0.580", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 9, "question": "question_10", "response": "response_10", "metrics": {"Metrics_1": {"value": "0.610", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 10, "question": "question_11", "response": "response_11", "metrics": {"Metrics_1": {"value": "0.640", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 11, "question": "question_12", "response": "response_12", "metrics": {"Metrics_1": {"value": "0.670", "status": "Failed", "class": "status-failed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 12, "question": "question_13", "response": "response_13", "metrics": {"Metrics_1": {"value": "0.700", "status": "Passed", "class": "status-passed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 13, "question": "question_14", "response": "response_14", "metrics": {"Metrics_1": {"value": "0.730", "status": "Passed", "class": "status-passed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}, {"index": 14, "question": "question_15", "response": "response_15", "metrics": {"Metrics_1": {"value": "0.760", "status": "Passed", "class": "status-passed", "clickable": true}, "Metrics_2": {"value": "1.000", "status": "Passed", "class": "status-passed", "clickable": true}}}];
+            let allMetrics = ["Metrics_1", "Metrics_2"];
+            
+            function initializeTable() {
+                totalRows = allTableData.length;
+                displayPage();
+            }
+            
+            function displayPage() {
+                const startIdx = (currentPage - 1) * rowsPerPage;
+                const endIdx = Math.min(startIdx + rowsPerPage, totalRows);
+                const tbody = document.getElementById('tableBody');
+                
+                if (!tbody) return;
+                
+                let html = '';
+                
+                for (let i = startIdx; i < endIdx; i++) {
+                    const rowData = allTableData[i];
+                    html += '<tr>';
+                    
+                    // Question and Response columns
+                    html += `<td>${rowData.question}</td>`;
+                    html += `<td>${rowData.response}</td>`;
+                    
+                    // Metric columns
+                    allMetrics.forEach(metric => {
+                        const metricData = rowData.metrics[metric];
+                        if (metricData.clickable) {
+                            html += `<td class="text-center">
+                                <span class="status-cell ${metricData.class}" 
+                                      onclick="openModal(${rowData.index}, '${metric}')"
+                                      title="Click for details">
+                                    ${metricData.value}
+                                </span>
+                            </td>`;
+                        } else {
+                            html += `<td class="text-center">
+                                <span class="status-cell status-skipped">N/A</span>
+                            </td>`;
+                        }
+                    });
+                    
+                    html += '</tr>';
+                }
+                
+                tbody.innerHTML = html;
+                updatePaginationInfo();
+            }
+            
+            function updatePaginationInfo() {
+                const totalPages = Math.ceil(totalRows / rowsPerPage);
+                const pageInfoEl = document.getElementById('pageInfo');
+                if (pageInfoEl) {
+                    pageInfoEl.textContent = `Page ${currentPage} of ${totalPages} (Showing ${Math.min(rowsPerPage, totalRows - (currentPage - 1) * rowsPerPage)} of ${totalRows} records)`;
+                }
+                renderPaginationButtons(totalPages);
+            }
+            
+            function renderPaginationButtons(totalPages) {
+                const container = document.getElementById('paginationButtons');
+                if (!container) return;
+                
+                let html = '';
+                const maxVisible = 5;
+                
+                // First and Previous buttons
+                html += `<button class="page-btn" onclick="goToPage(1)" ${currentPage === 1 ? 'disabled' : ''}>First</button>`;
+                html += `<button class="page-btn" onclick="previousPage()" ${currentPage === 1 ? 'disabled' : ''}>Prev</button>`;
+                
+                // Page number buttons
+                let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                
+                if (endPage - startPage + 1 < maxVisible) {
+                    startPage = Math.max(1, endPage - maxVisible + 1);
+                }
+                
+                // Add ellipsis and first page if needed
+                if (startPage > 1) {
+                    html += `<button class="page-btn" onclick="goToPage(1)">1</button>`;
+                    if (startPage > 2) {
+                        html += `<span class="page-btn disabled">...</span>`;
+                    }
+                }
+                
+                // Page number buttons
+                for (let i = startPage; i <= endPage; i++) {
+                    html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="goToPage(${i})">${i}</button>`;
+                }
+                
+                // Add ellipsis and last page if needed
+                if (endPage < totalPages) {
+                    if (endPage < totalPages - 1) {
+                        html += `<span class="page-btn disabled">...</span>`;
+                    }
+                    html += `<button class="page-btn" onclick="goToPage(${totalPages})">${totalPages}</button>`;
+                }
+                
+                // Next and Last buttons
+                html += `<button class="page-btn" onclick="nextPage()" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+                html += `<button class="page-btn" onclick="goToPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>Last</button>`;
+                
+                container.innerHTML = html;
+            }
+            
+            function goToPage(page) {
+                const totalPages = Math.ceil(totalRows / rowsPerPage);
+                if (page >= 1 && page <= totalPages) {
+                    currentPage = page;
+                    displayPage();
+                }
+            }
+            
+            function nextPage() {
+                const totalPages = Math.ceil(totalRows / rowsPerPage);
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    displayPage();
+                }
+            }
+            
+            function previousPage() {
+                if (currentPage > 1) {
+                    currentPage--;
+                    displayPage();
+                }
+            }
+            
+            function changeRowsPerPage() {
+                const select = document.getElementById('rowsPerPage');
+                if (select) {
+                    rowsPerPage = parseInt(select.value);
+                    currentPage = 1;
+                    displayPage();
+                }
+            }
+            
+            // Initialize table when DOM is loaded
+            document.addEventListener('DOMContentLoaded', initializeTable);
+            </script>
+            
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    
+        <div id="detailModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h3 class="modal-title" id="modalTitle">Metric Details</h3>
+                        <p class="modal-subtitle" id="modalSubtitle">Threshold: N/A</p>
+                    </div>
+                    <button class="modal-close" onclick="closeModal()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-left">
+                        <div class="modal-section">
+                            <h4>Question</h4>
+                            <p id="modalQuestion">N/A</p>
+                        </div>
+                        
+                        <div class="collapsible-section">
+                            <div class="collapsible-header" onclick="toggleCollapsible('response')">
+                                <h4>Response</h4>
+                                <span class="toggle-icon" id="responseIcon">▼</span>
+                            </div>
+                            <div class="collapsible-content collapsed" id="responseContent">
+                                <p id="modalResponse">N/A</p>
+                            </div>
+                        </div>
+                        
+                        <div class="modal-section">
+                            <h4>Citations</h4>
+                            <p id="modalCitations">N/A</p>
+                        </div>
+                        
+                        <div class="collapsible-section">
+                            <div class="collapsible-header" onclick="toggleCollapsible('context')">
+                                <h4>Context</h4>
+                                <span class="toggle-icon" id="contextIcon">▼</span>
+                            </div>
+                            <div class="collapsible-content collapsed" id="contextContent">
+                                <p id="modalContext">N/A</p>
+                            </div>
+                        </div>
+                        
+                        <div class="collapsible-section">
+                            <div class="collapsible-header" onclick="toggleCollapsible('metadata')">
+                                <h4>Documents & Metadata</h4>
+                                <span class="toggle-icon" id="metadataIcon">▼</span>
+                            </div>
+                            <div class="collapsible-content collapsed" id="metadataContent">
+                                <p id="modalMetadata">N/A</p>
+                            </div>
+                        </div>
+                        
+                        <div class="collapsible-section">
+                            <div class="collapsible-header" onclick="toggleCollapsible('projectContext')">
+                                <h4>Project Context</h4>
+                                <span class="toggle-icon" id="projectContextIcon">▼</span>
+                            </div>
+                            <div class="collapsible-content collapsed" id="projectContextContent">
+                                <p id="modalProjectContext">N/A</p>
+                            </div>
+                        </div>
+                        
+                        <div class="modal-section">
+                            <h4>Selected Configuration</h4>
+                            <p id="modalConfiguration">N/A</p>
+                        </div>
+                        
+                        <div class="modal-section">
+                            <h4>Ground Truth Response</h4>
+                            <p id="modalGroundTruth">N/A</p>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-right">
+                        <div class="score-visualization">
+                            <h4>Score Analysis</h4>
+                            <div id="scorePieChart"></div>
+                        </div>
+                        
+                        <div class="modal-section">
+                            <h4>Evaluation Reason</h4>
+                            <p id="modalReason">N/A</p>
+                        </div>
+                        
+                        <div id="additionalMetricFields"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    
+    <script>
+        // Global data
+        const modalData = {"0": {"question": "question_1", "response": "response_1", "context": "context_1", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.0", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_1"}}, "Metrics_2": {"score": "0.5", "threshold": "0.9", "status": "Failed", "additional_fields": {"reason": "Metrics_2-reason_1"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "1": {"question": "question_2", "response": "response_2", "context": "context_2", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "1.0", "threshold": "0.7", "status": "Passed", "additional_fields": {"reason": "Metrics_1-reason_2"}}, "Metrics_2": {"score": "0.8", "threshold": "0.9", "status": "Failed", "additional_fields": {"reason": "Metrics_2-reason_2"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "2": {"question": "question_3", "response": "response_3", "context": "context_3", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.2", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_3"}}, "Metrics_2": {"score": "0.2", "threshold": "0.9", "status": "Failed", "additional_fields": {"reason": "Metrics_2-reason_3"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "3": {"question": "question_4", "response": "response_4", "context": "context_4", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.3", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_4"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_4"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "4": {"question": "question_5", "response": "response_5", "context": "context_5", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.5", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_5"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_5"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "5": {"question": "question_6", "response": "response_6", "context": "context_6", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.49", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_6"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_6"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "6": {"question": "question_7", "response": "response_7", "context": "context_7", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.52", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_7"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_7"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "7": {"question": "question_8", "response": "response_8", "context": "context_8", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.55", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_8"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_8"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "8": {"question": "question_9", "response": "response_9", "context": "context_9", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.58", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_9"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_9"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "9": {"question": "question_10", "response": "response_10", "context": "context_10", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.61", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_10"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_10"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "10": {"question": "question_11", "response": "response_11", "context": "context_11", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.64", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_11"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_11"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "11": {"question": "question_12", "response": "response_12", "context": "context_12", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.67", "threshold": "0.7", "status": "Failed", "additional_fields": {"reason": "Metrics_1-reason_12"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_12"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "12": {"question": "question_13", "response": "response_13", "context": "context_13", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.7", "threshold": "0.7", "status": "Passed", "additional_fields": {"reason": "Metrics_1-reason_13"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_13"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "13": {"question": "question_14", "response": "response_14", "context": "context_14", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.73", "threshold": "0.7", "status": "Passed", "additional_fields": {"reason": "Metrics_1-reason_14"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_14"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}, "14": {"question": "question_15", "response": "response_15", "context": "context_15", "ground_truth_response": "N/A", "timestamp": "2025-11-19 06:07:18", "metrics": {"Metrics_1": {"score": "0.76", "threshold": "0.7", "status": "Passed", "additional_fields": {"reason": "Metrics_1-reason_15"}}, "Metrics_2": {"score": "1.0", "threshold": "0.9", "status": "Passed", "additional_fields": {"reason": "Metrics_2-reason_15"}}}, "citations": "N/A", "project_context": "N/A", "execution_time": "N/A", "model_version": "N/A", "confidence_score": "N/A"}};
+        const config = {"title": "GenAI Model Monitoring Report", "subtitle": "LLM-as-a-Judge Assurance Pipeline", "description": "Advanced monitoring pipeline that evaluates GenAI model outputs against predefined criteria, ensuring quality, safety, and alignment with project requirements.", "theme": {"primary_color": "#2E86AB", "secondary_color": "#A23B72", "accent_color": "#F18F01", "success_color": "#28a745", "danger_color": "#dc3545", "warning_color": "#ffc107", "info_color": "#17a2b8", "light_bg": "#f8f9fa", "dark_bg": "#343a40", "border_color": "#dee2e6", "font_family": "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"}, "status_colors": {"Passed": "#28a745", "Failed": "#dc3545", "Skipped": "#6c757d", "passed": "#28a745", "failed": "#dc3545", "skipped": "#6c757d"}, "reverse_metrics": ["Hallucination"], "chart_height": 450};
+        
+        // Tab functionality
+        function showTab(tabName, event) {
+            // Remove active class from all tabs and buttons
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to selected tab and button
+            const selectedTab = document.getElementById(tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
+            
+            // Force Plotly charts to resize when switching to analytics tab
+            if (tabName === 'analytics') {
+                setTimeout(() => {
+                    document.querySelectorAll('#analytics .plotly-graph-div').forEach(div => {
+                        if (window.Plotly) {
+                            try {
+                                window.Plotly.Plots.resize(div);
+                            } catch (e) {
+                                console.warn('Error resizing chart:', e);
+                            }
+                        }
+                    });
+                }, 100);
+            }
+        }
+        
+        // Modal functionality
+        function closeModal() {
+            const modal = document.getElementById('detailModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
+        function toggleCollapsible(sectionId) {
+            const content = document.getElementById(sectionId + 'Content');
+            const icon = document.getElementById(sectionId + 'Icon');
+            
+            if (content && icon) {
+                if (content.classList.contains('collapsed')) {
+                    content.classList.remove('collapsed');
+                    icon.classList.add('expanded');
+                    icon.textContent = '▲';
+                } else {
+                    content.classList.add('collapsed');
+                    icon.classList.remove('expanded');
+                    icon.textContent = '▼';
+                }
+            }
+        }
+        
+        function openModal(rowIndex, metricName) {
+            const modal = document.getElementById('detailModal');
+            if (!modal || !modalData[rowIndex]) {
+                console.error('Modal or data not found');
+                return;
+            }
+            
+            const data = modalData[rowIndex];
+            const metricData = data.metrics[metricName] || {};
+            
+            // Reset modal scroll positions
+            const modalLeft = modal.querySelector('.modal-left');
+            const modalRight = modal.querySelector('.modal-right');
+            if (modalLeft) modalLeft.scrollTop = 0;
+            if (modalRight) modalRight.scrollTop = 0;
+            
+            // Reset collapsible sections
+            ['response', 'context', 'metadata', 'projectContext'].forEach(sectionId => {
+                const content = document.getElementById(sectionId + 'Content');
+                const icon = document.getElementById(sectionId + 'Icon');
+                if (content && icon) {
+                    content.classList.add('collapsed');
+                    icon.classList.remove('expanded');
+                    icon.textContent = '▼';
+                }
+            });
+            
+            // Update modal content
+            const updateElement = (id, content) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = content || 'N/A';
+                }
+            };
+            
+            updateElement('modalTitle', `${metricName.replace(/_/g, ' ').toUpperCase()} Details`);
+            updateElement('modalSubtitle', `Threshold: ${metricData.threshold || 'N/A'}`);
+            updateElement('modalQuestion', data.question);
+            updateElement('modalResponse', data.response);
+            updateElement('modalContext', data.context);
+            updateElement('modalCitations', data.citations);
+            updateElement('modalMetadata', data.meta_data);
+            updateElement('modalProjectContext', data.project_context);
+            updateElement('modalConfiguration', data.selected_pills);
+            updateElement('modalGroundTruth', data.ground_truth_response);
+            updateElement('modalReason', metricData.additional_fields?.reason || 'No reason provided');
+            
+            // Handle additional metric fields
+            const additionalFieldsDiv = document.getElementById('additionalMetricFields');
+            if (additionalFieldsDiv && metricData.additional_fields) {
+                additionalFieldsDiv.innerHTML = '';
+                const processedFields = new Set(['reason', 'status']);
+                
+                Object.keys(metricData.additional_fields).forEach(fieldName => {
+                    if (!processedFields.has(fieldName)) {
+                        const fieldValue = metricData.additional_fields[fieldName];
+                        if (fieldValue && fieldValue !== 'nan' && fieldValue !== 'N/A') {
+                            const fieldDiv = document.createElement('div');
+                            fieldDiv.className = 'modal-section';
+                            fieldDiv.innerHTML = `
+                                <h4>${fieldName.charAt(0).toUpperCase() + fieldName.slice(1).replace(/_/g, ' ')}</h4>
+                                <p>${fieldValue}</p>
+                            `;
+                            additionalFieldsDiv.appendChild(fieldDiv);
+                        }
+                    }
+                });
+            }
+            
+            // Create score visualization
+            const scoreElement = document.getElementById('scorePieChart');
+            if (scoreElement && metricData.score && metricData.threshold) {
+                createScorePieChart(
+                    parseFloat(metricData.score), 
+                    parseFloat(metricData.threshold), 
+                    metricName
+                );
+            }
+            
+            // Show modal
+            modal.style.display = 'block';
+        }
+        
+        function createScorePieChart(score, threshold, metric) {
+            if (isNaN(score) || isNaN(threshold)) return;
+            
+            const remaining = Math.max(0, 1 - score);
+            const isReverse = config.reverse_metrics?.includes(metric) || false;
+            const isPass = isReverse ? score <= threshold : score >= threshold;
+            
+            const statusColors = config.status_colors || config.colors || {};
+            const passColor = statusColors.passed || statusColors.Passed || '#28a745';
+            const failColor = statusColors.failed || statusColors.Failed || '#dc3545';
+            
+            const data = [{
+                values: [score, remaining],
+                labels: ['Score', 'Remaining'],
+                type: 'pie',
+                hole: 0.4,
+                marker: {
+                    colors: [isPass ? passColor : failColor, '#f0f0f0']
+                },
+                textinfo: 'none',
+                hovertemplate: '<b>%{label}</b><br>Value: %{value:.3f}<br>Percentage: %{percent}<extra></extra>'
+            }];
+            
+            const layout = {
+                showlegend: false,
+                margin: { t: 20, b: 20, l: 20, r: 20 },
+                height: 160,
+                width: 160,
+                autosize: false,
+                annotations: [{
+                    text: score.toFixed(3) + '<br>' + (isPass ? 'PASS' : 'FAIL'),
+                    x: 0.5,
+                    y: 0.5,
+                    font: { size: 14, color: isPass ? passColor : failColor, weight: 'bold' },
+                    showarrow: false,
+                    align: 'center'
+                }],
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            };
+            
+            try {
+                Plotly.newPlot('scorePieChart', data, layout, { displayModeBar: false, responsive: true });
+            } catch (e) {
+                console.error('Error creating score chart:', e);
+            }
+        }
+        
+        // Global click handler for modal
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('detailModal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        
+        // Keyboard handler for modal
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Report loaded successfully');
+            // Initialize any additional functionality here
+        });
+    </script>
+</body>
+</html>

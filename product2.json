@@ -1,0 +1,64 @@
+{
+  "file_name": "product_catalog_robustness_eval_02.json",
+  "domain": "E-commerce / Product Catalog",
+  "description": "This file covers home appliance and fitness equipment product listings with parent nodes and their child variant/summary nodes for robustness drift evaluation.",
+
+  "parents": [
+    {
+      "parent_id": "P001",
+      "parent_context": "The Dyson V15 Detect is a cordless vacuum cleaner equipped with a laser dust detection system that reveals microscopic dust particles on hard floors. It features a digital motor V15 generating 240 AW suction power. The battery offers up to 60 minutes of run time on eco mode. It comes with a HEPA filtration system that captures 99.97% of particles as small as 0.3 microns. The vacuum is available in Yellow/Nickel and Submarine color variants, priced at $749.99. It includes 10 accessories in the box and has an LCD screen displaying real-time performance data.",
+      "children": [
+        {
+          "child_id": "C001",
+          "child_context": "Dyson V15 Detect cordless vacuum features laser dust detection to expose hidden dust on hard floors. Powered by the digital V15 motor with 240 AW suction. Up to 60 minutes runtime on eco mode. HEPA filtration captures 99.97% of particles down to 0.3 microns. Priced at $749.99 in Yellow/Nickel and Submarine variants. Comes with 10 accessories and an LCD screen for live performance stats."
+        },
+        {
+          "child_id": "C002",
+          "child_context": "The Dyson V15 Detect is a powerful cordless vacuum with laser detection technology. It has a strong motor with high suction power and a long battery life. HEPA filter included. Available in multiple colors and comes with several accessories. Price available on request."
+        },
+        {
+          "child_id": "C003",
+          "child_context": "Dyson V15 Detect cordless vacuum uses laser technology to detect dust on floors. Features 240 AW suction from the V15 digital motor and a HEPA filter capturing 99.97% of particles at 0.3 microns. Battery provides 60 minutes on eco mode. Available in Yellow/Nickel and Submarine at $749.99. Includes 10 accessories. Equipped with an LCD screen showing real-time data."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P002",
+      "parent_context": "The Samsung 65-inch QLED 4K Smart TV (QN65Q80C) features Quantum Dot technology delivering 100% color volume. It supports a 120Hz refresh rate and is compatible with HDMI 2.1 for next-gen gaming. The TV runs on Samsung's Tizen OS and includes 4 HDMI ports and 2 USB ports. It has an Object Tracking Sound system with 60W audio output. Priced at $1,299, available in a single Black finish. The TV also supports HDR10+, Dolby Vision is not supported.",
+      "children": [
+        {
+          "child_id": "C004",
+          "child_context": "Samsung 65-inch QLED 4K Smart TV (QN65Q80C) uses Quantum Dot technology for 100% color volume. 120Hz refresh rate and HDMI 2.1 support make it great for gaming. Runs Tizen OS with 4 HDMI and 2 USB ports. Object Tracking Sound with 60W output. Priced at $1,299 in Black. Supports HDR10+; Dolby Vision not supported."
+        },
+        {
+          "child_id": "C005",
+          "child_context": "The Samsung QN65Q80C is a 65-inch 4K Smart TV with Quantum Dot display technology. It has a 120Hz refresh rate and HDMI 2.1 support. Runs on Tizen OS. Priced at $1,299 in Black. Supports both HDR10+ and Dolby Vision for an immersive viewing experience."
+        },
+        {
+          "child_id": "C006",
+          "child_context": "Samsung 65-inch QLED 4K TV with Quantum Dot for full color volume. Features 120Hz refresh rate and HDMI 2.1. Tizen OS, 4 HDMI ports, 2 USB ports. Object Tracking Sound at 60W. HDR10+ supported, Dolby Vision not supported. Available in Black at $1,299."
+        }
+      ]
+    },
+
+    {
+      "parent_id": "P003",
+      "parent_context": "The Peloton Bike+ is a premium indoor exercise bike featuring a 23.8-inch rotating HD touchscreen. It has auto-resistance adjustment that syncs with instructor-led classes. The flywheel weighs 17.5 lbs and the bike supports users up to 297 lbs. It includes Apple GymKit integration and a built-in 26W stereo sound system. The bike dimensions are 59L x 22W x 59H inches. Priced at $2,495, it requires a Peloton All-Access Membership at $44/month for full class access. Delivery and setup are included in the purchase price.",
+      "children": [
+        {
+          "child_id": "C007",
+          "child_context": "Peloton Bike+ features a 23.8-inch rotating HD touchscreen and auto-resistance that adjusts with live classes. 17.5 lb flywheel supports riders up to 297 lbs. Apple GymKit compatible with 26W built-in stereo. Dimensions: 59L x 22W x 59H inches. Priced at $2,495 with free delivery and setup. Requires Peloton All-Access Membership at $44/month."
+        },
+        {
+          "child_id": "C008",
+          "child_context": "The Peloton Bike+ is a high-end indoor cycling bike with a large rotating touchscreen for interactive workouts. It features auto-resistance and a powerful sound system. Priced at $2,495 and requires a monthly membership for class access. Delivery is included."
+        },
+        {
+          "child_id": "C009",
+          "child_context": "Peloton Bike+ is an advanced indoor exercise bike with a 23.8-inch rotating HD touchscreen. Auto-resistance syncs with instructor classes. Flywheel is 17.5 lbs, max user weight 297 lbs. Apple GymKit integration and 26W stereo included. Dimensions: 59L x 22W x 59H inches. Costs $2,495 including delivery and setup. Monthly membership is $59/month for full class access."
+        }
+      ]
+    }
+  ]
+}
